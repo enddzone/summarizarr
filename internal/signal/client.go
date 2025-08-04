@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/coder/websocket"
@@ -35,7 +35,7 @@ func NewClient(addr, number string, db DB) *Client {
 // Listen connects to the WebSocket and listens for messages.
 func (c *Client) Listen(ctx context.Context) error {
 	wsURL := fmt.Sprintf("ws://%s/v1/receive/%s", c.addr, c.number)
-	log.Printf("Connecting to WebSocket: %s", wsURL)
+	slog.Info("Connecting to WebSocket", "url", wsURL)
 
 	var err error
 	maxRetries := 5
@@ -46,7 +46,7 @@ func (c *Client) Listen(ctx context.Context) error {
 		if err == nil {
 			break // Success
 		}
-		log.Printf("WebSocket connection failed (attempt %d/%d): %v. Retrying in %v...", i+1, maxRetries, err, retryDelay)
+		slog.Warn("WebSocket connection failed", "attempt", i+1, "max_attempts", maxRetries, "error", err, "retry_delay", retryDelay)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -76,18 +76,25 @@ func (c *Client) Listen(ctx context.Context) error {
 			}
 
 			if messageType == websocket.MessageText {
-				var envelope Envelope
-				if err := json.Unmarshal(data, &envelope); err != nil {
-					log.Printf("Error unmarshaling message: %v", err)
+				var wrapper EnvelopeWrapper
+				if err := json.Unmarshal(data, &wrapper); err != nil {
+					slog.Error("Error unmarshaling message", "error", err)
 					continue
 				}
 
-				if err := c.db.SaveMessage(&envelope); err != nil {
-					log.Printf("Error saving message: %v", err)
+				if wrapper.Envelope == nil {
+					slog.Debug("Received message with empty envelope")
 					continue
 				}
 
-				log.Printf("Saved message from %s", envelope.DisplayName())
+				slog.Debug("Received message", "envelope", wrapper.Envelope)
+
+				if err := c.db.SaveMessage(wrapper.Envelope); err != nil {
+					slog.Error("Error saving message", "error", err)
+					continue
+				}
+
+				slog.Info("Saved message", "from", wrapper.Envelope.DisplayName())
 			}
 		}
 	}

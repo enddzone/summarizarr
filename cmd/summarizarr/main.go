@@ -2,30 +2,37 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"summarizarr/internal/ai"
 	"summarizarr/internal/api"
+	"summarizarr/internal/config"
 	"summarizarr/internal/database"
 	"time"
 	signalclient "summarizarr/internal/signal"
 )
 
 func main() {
-	log.Println("Summarizarr starting...")
+	cfg := config.New()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	slog.SetDefault(logger)
+
+	slog.Info("Summarizarr starting...")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	db, err := database.NewDB("summarizarr.db")
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	if err := db.Init(); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		slog.Error("Failed to initialize database", "error", err)
+		os.Exit(1)
 	}
 
 	aiModel := os.Getenv("OPENAI_MODEL")
@@ -43,7 +50,8 @@ func main() {
 
 	go func() {
 		if err := client.Listen(ctx); err != nil {
-			log.Fatalf("Signal listener error: %v", err)
+			slog.Error("Signal listener error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -54,15 +62,16 @@ func main() {
 
 	summarizationInterval, err := time.ParseDuration(summarizationIntervalStr)
 	if err != nil {
-		log.Fatalf("Invalid summarization interval: %v", err)
+		slog.Error("Invalid summarization interval", "error", err)
+		os.Exit(1)
 	}
 
 	scheduler := ai.NewScheduler(db, aiClient, summarizationInterval)
 	go scheduler.Start(ctx)
 
 	<-ctx.Done()
-	log.Println("Shutting down Summarizarr...")
+	slog.Info("Shutting down Summarizarr...")
 	if err := apiServer.Shutdown(ctx); err != nil {
-		log.Printf("API server shutdown error: %v", err)
+		slog.Error("API server shutdown error", "error", err)
 	}
 }

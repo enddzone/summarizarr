@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -34,9 +35,10 @@ func NewServer(addr string, db *sql.DB) *Server {
 
 // Start starts the API server.
 func (s *Server) Start() {
-	log.Printf("API server listening on %s", s.server.Addr)
+	slog.Info("API server listening", "address", s.server.Addr)
 	if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatalf("API server failed: %v", err)
+		slog.Error("API server failed", "error", err)
+		os.Exit(1)
 	}
 }
 

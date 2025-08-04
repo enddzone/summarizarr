@@ -2,7 +2,7 @@ package ai
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"summarizarr/internal/database"
 	"time"
 )
@@ -46,11 +46,11 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) runSummarization(ctx context.Context) {
-	log.Println("Running summarization...")
+	slog.Info("Running summarization...")
 
 	groups, err := s.db.GetGroups()
 	if err != nil {
-		log.Printf("Error getting groups for summarization: %v", err)
+		slog.Error("Error getting groups for summarization", "error", err)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (s *Scheduler) summarizeGroup(ctx context.Context, groupID int64) {
 
 	messages, err := s.db.GetMessagesForSummarization(groupID, start, end)
 	if err != nil {
-		log.Printf("Error getting messages for summarization for group %d: %v", groupID, err)
+		slog.Error("Error getting messages for summarization", "group_id", groupID, "error", err)
 		return
 	}
 
@@ -75,14 +75,14 @@ func (s *Scheduler) summarizeGroup(ctx context.Context, groupID int64) {
 
 	summary, err := s.aiClient.Summarize(ctx, messages)
 	if err != nil {
-		log.Printf("Error summarizing messages for group %d: %v", groupID, err)
+		slog.Error("Error summarizing messages", "group_id", groupID, "error", err)
 		return
 	}
 
 	if err := s.db.SaveSummary(groupID, summary, start, end); err != nil {
-		log.Printf("Error saving summary for group %d: %v", groupID, err)
+		slog.Error("Error saving summary", "group_id", groupID, "error", err)
 		return
 	}
 
-	log.Printf("Saved summary for group %d", groupID)
+	slog.Info("Saved summary", "group_id", groupID)
 }
