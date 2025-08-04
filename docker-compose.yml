@@ -1,0 +1,27 @@
+version: "3"
+services:
+  signal-cli-rest-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    environment:
+      - MODE=json-rpc
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./signal-cli-config:/home/.local/share/signal-cli"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/about"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  summarizarr:
+    build: .
+    ports:
+      - "8081:8081"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SUMMARIZATION_INTERVAL=3h
+      - OPENAI_MODEL=gpt-4o
+    depends_on:
+      signal-cli-rest-api:
+        condition: service_healthy
