@@ -8,28 +8,24 @@ import (
 const sampleMessage = `
 {
     "envelope": {
-      "source": "+18177392137",
-      "sourceNumber": "+18177392137",
-      "sourceUuid": "6f18ddfb-c3f4-4ce9-9da0-d90efd7f2e2b",
-      "sourceName": "Nipuna Perera",
+      "source": "e1a8c050-2b12-440b-9814-f993c07a758e",
+      "sourceNumber": null,
+      "sourceUuid": "e1a8c050-2b12-440b-9814-f993c07a758e",
+      "sourceName": "PR",
       "sourceDevice": 1,
-      "timestamp": 1754277894400,
-      "serverReceivedTimestamp": 1754277892899,
-      "serverDeliveredTimestamp": 1754277901483,
-      "syncMessage": {
-        "sentMessage": {
-          "destination": null,
-          "destinationNumber": null,
-          "destinationUuid": null,
-          "timestamp": 1754277894400,
-          "message": "This is a test message.",
-          "expiresInSeconds": 0,
-          "viewOnce": false,
-          "groupInfo": {
-            "groupId": "PLraV/rOQu4vyodMyn9fG2sgH1P+F9S+8iikkrGfNn0=",
-            "groupName": "Setups and Suggestions",
-            "type": "DELIVER"
-          }
+      "timestamp": 1754295444829,
+      "serverReceivedTimestamp": 1754295445161,
+      "serverDeliveredTimestamp": 1754298658564,
+      "dataMessage": {
+        "timestamp": 1754295444829,
+        "message": "Together.2025.1080p.SCREENER.WEB-DL.X264.AC3-AOC",
+        "expiresInSeconds": 0,
+        "viewOnce": false,
+        "groupInfo": {
+          "groupId": "MvIF76urVKX1Zc2gPDciy/7V3P5xLtuQHk6zMkeTZtU=",
+          "groupName": "Trackers / Usenet Indexers",
+          "revision": 715,
+          "type": "DELIVER"
         }
       }
     },
@@ -44,19 +40,19 @@ func TestUnmarshalMessage(t *testing.T) {
 		t.Fatalf("Failed to unmarshal JSON: %v", err)
 	}
 
-	if msg.Envelope.Source != "+18177392137" {
-		t.Errorf("Expected source to be '+18177392137', but got '%s'", msg.Envelope.Source)
+	if msg.Envelope.Source != "e1a8c050-2b12-440b-9814-f993c07a758e" {
+		t.Errorf("Expected source to be 'e1a8c050-2b12-440b-9814-f993c07a758e', but got '%s'", msg.Envelope.Source)
 	}
 
-	if msg.Envelope.SourceName != "Nipuna Perera" {
-		t.Errorf("Expected source name to be 'Nipuna Perera', but got '%s'", msg.Envelope.SourceName)
+	if msg.Envelope.SourceName != "PR" {
+		t.Errorf("Expected source name to be 'PR', but got '%s'", msg.Envelope.SourceName)
 	}
 
-	if msg.Envelope.SyncMessage.SentMessage.Message != "This is a test message." {
-		t.Errorf("Expected message to be 'This is a test message.', but got '%s'", msg.Envelope.SyncMessage.SentMessage.Message)
+	if msg.Envelope.DataMessage.Message != "Together.2025.1080p.SCREENER.WEB-DL.X264.AC3-AOC" {
+		t.Errorf("Expected message to be 'Together.2025.1080p.SCREENER.WEB-DL.X264.AC3-AOC', but got '%s'", msg.Envelope.DataMessage.Message)
 	}
 
-	if msg.Envelope.SyncMessage.SentMessage.GroupInfo.GroupName != "Setups and Suggestions" {
-		t.Errorf("Expected group name to be 'Setups and Suggestions', but got '%s'", msg.Envelope.SyncMessage.SentMessage.GroupInfo.GroupName)
+	if msg.Envelope.DataMessage.GroupInfo.GroupName != "Trackers / Usenet Indexers" {
+		t.Errorf("Expected group name to be 'Trackers / Usenet Indexers', but got '%s'", msg.Envelope.DataMessage.GroupInfo.GroupName)
 	}
 }

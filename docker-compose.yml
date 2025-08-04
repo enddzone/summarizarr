@@ -20,7 +20,7 @@ services:
       - "8081:8081"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SUMMARIZATION_INTERVAL=3h
+      - SUMMARIZATION_INTERVAL=2h
       - OPENAI_MODEL=gpt-4o
       - LOG_LEVEL=DEBUG
     depends_on:

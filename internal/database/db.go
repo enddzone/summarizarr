@@ -44,7 +44,7 @@ func (db *DB) Init() error {
 
 // SaveMessage saves a message to the database.
 func (db *DB) SaveMessage(msg *signal.Envelope) error {
-	if msg.SyncMessage == nil || msg.SyncMessage.SentMessage == nil || msg.SyncMessage.SentMessage.GroupInfo == nil {
+	if msg.DataMessage == nil || msg.DataMessage.GroupInfo == nil {
 		return nil // Not a group message, ignore
 	}
 
@@ -59,25 +59,15 @@ func (db *DB) SaveMessage(msg *signal.Envelope) error {
 		return fmt.Errorf("failed to find or create user: %w", err)
 	}
 
-	groupID, err := db.findOrCreateGroup(tx, msg.SyncMessage.SentMessage.GroupInfo.GroupID, msg.SyncMessage.SentMessage.GroupInfo.GroupName)
+	groupID, err := db.findOrCreateGroup(tx, msg.DataMessage.GroupInfo.GroupID, msg.DataMessage.GroupInfo.GroupName)
 	if err != nil {
 		return fmt.Errorf("failed to find or create group: %w", err)
 	}
 
-	var isReaction bool
-	var reactionEmoji, reactionTargetAuthorUUID string
-	var reactionTargetTimestamp int64
-	if msg.SyncMessage.SentMessage.Reaction != nil {
-		isReaction = true
-		reactionEmoji = msg.SyncMessage.SentMessage.Reaction.Emoji
-		reactionTargetAuthorUUID = msg.SyncMessage.SentMessage.Reaction.TargetAuthorUUID
-		reactionTargetTimestamp = msg.SyncMessage.SentMessage.Reaction.TargetSentTimestamp
-	}
-
 	_, err = tx.Exec(`
-		INSERT INTO messages (timestamp, server_received_timestamp, server_delivered_timestamp, message_text, is_reaction, reaction_emoji, reaction_target_author_uuid, reaction_target_timestamp, user_id, group_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, msg.Timestamp, msg.Timestamp, msg.Timestamp, msg.SyncMessage.SentMessage.Message, isReaction, reactionEmoji, reactionTargetAuthorUUID, reactionTargetTimestamp, userID, groupID)
+		INSERT INTO messages (timestamp, server_received_timestamp, server_delivered_timestamp, message_text, is_reaction, user_id, group_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, msg.Timestamp, msg.Timestamp, msg.Timestamp, msg.DataMessage.Message, 0, userID, groupID)
 	if err != nil {
 		return fmt.Errorf("failed to insert message: %w", err)
 	}
