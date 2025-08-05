@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"summarizarr/internal/signal"
 
@@ -44,8 +45,25 @@ func (db *DB) Init() error {
 
 // SaveMessage saves a message to the database.
 func (db *DB) SaveMessage(msg *signal.Envelope) error {
-	if msg.DataMessage == nil || msg.DataMessage.GroupInfo == nil {
-		return nil // Not a group message, ignore
+	// Extract message content and group info from either DataMessage or SyncMessage
+	var messageText string
+	var groupInfo *signal.GroupInfo
+	var timestamp int64 = msg.Timestamp
+
+	// Check DataMessage first
+	if msg.DataMessage != nil && msg.DataMessage.GroupInfo != nil {
+		messageText = msg.DataMessage.Message
+		groupInfo = msg.DataMessage.GroupInfo
+	} else if msg.SyncMessage != nil && msg.SyncMessage.SentMessage != nil && msg.SyncMessage.SentMessage.GroupInfo != nil {
+		// Check SyncMessage for sent messages
+		messageText = msg.SyncMessage.SentMessage.Message
+		groupInfo = msg.SyncMessage.SentMessage.GroupInfo
+		if msg.SyncMessage.SentMessage.Timestamp > 0 {
+			timestamp = msg.SyncMessage.SentMessage.Timestamp
+		}
+	} else {
+		// Not a group message or no recognizable content, ignore
+		return nil
 	}
 
 	tx, err := db.Begin()
@@ -59,7 +77,7 @@ func (db *DB) SaveMessage(msg *signal.Envelope) error {
 		return fmt.Errorf("failed to find or create user: %w", err)
 	}
 
-	groupID, err := db.findOrCreateGroup(tx, msg.DataMessage.GroupInfo.GroupID, msg.DataMessage.GroupInfo.GroupName)
+	groupID, err := db.findOrCreateGroup(tx, groupInfo.GroupID, groupInfo.GroupName)
 	if err != nil {
 		return fmt.Errorf("failed to find or create group: %w", err)
 	}
@@ -67,7 +85,7 @@ func (db *DB) SaveMessage(msg *signal.Envelope) error {
 	_, err = tx.Exec(`
 		INSERT INTO messages (timestamp, server_received_timestamp, server_delivered_timestamp, message_text, is_reaction, user_id, group_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, msg.Timestamp, msg.Timestamp, msg.Timestamp, msg.DataMessage.Message, 0, userID, groupID)
+	`, timestamp, msg.ServerReceivedTimestamp, msg.ServerDeliveredTimestamp, messageText, 0, userID, groupID)
 	if err != nil {
 		return fmt.Errorf("failed to insert message: %w", err)
 	}
@@ -153,6 +171,48 @@ func (db *DB) SaveSummary(groupID int64, summaryText string, start, end int64) e
 		return fmt.Errorf("failed to insert summary: %w", err)
 	}
 	return nil
+}
+
+// Summary represents a summary record from the database.
+type Summary struct {
+	ID        int64  `json:"id"`
+	GroupID   int64  `json:"group_id"`
+	Text      string `json:"text"`
+	Start     int64  `json:"start_timestamp"`
+	End       int64  `json:"end_timestamp"`
+	CreatedAt string `json:"created_at"`
+}
+
+// GetSummaries retrieves all summaries from the database ordered by creation time.
+func (db *DB) GetSummaries() ([]Summary, error) {
+	slog.Debug("Executing GetSummaries query")
+	rows, err := db.Query("SELECT id, group_id, summary_text, start_timestamp, end_timestamp, created_at FROM summaries ORDER BY created_at DESC")
+	if err != nil {
+		slog.Error("Failed to execute GetSummaries query", "error", err)
+		return nil, fmt.Errorf("failed to query summaries: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []Summary
+	rowCount := 0
+	for rows.Next() {
+		rowCount++
+		var s Summary
+		if err := rows.Scan(&s.ID, &s.GroupID, &s.Text, &s.Start, &s.End, &s.CreatedAt); err != nil {
+			slog.Error("Failed to scan summary row", "error", err, "rowCount", rowCount)
+			return nil, fmt.Errorf("failed to scan summary: %w", err)
+		}
+		slog.Debug("Scanned summary", "id", s.ID, "groupId", s.GroupID, "textLength", len(s.Text))
+		summaries = append(summaries, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.Error("Error iterating summary rows", "error", err)
+		return nil, fmt.Errorf("error iterating summary rows: %w", err)
+	}
+
+	slog.Debug("GetSummaries completed", "count", len(summaries), "rowsProcessed", rowCount)
+	return summaries, nil
 }
 
 func (db *DB) findOrCreateGroup(tx *sql.Tx, groupID, name string) (int64, error) {

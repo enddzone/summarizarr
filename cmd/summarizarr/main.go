@@ -9,8 +9,8 @@ import (
 	"summarizarr/internal/api"
 	"summarizarr/internal/config"
 	"summarizarr/internal/database"
-	"time"
 	signalclient "summarizarr/internal/signal"
+	"time"
 )
 
 func main() {
@@ -45,8 +45,13 @@ func main() {
 
 	go apiServer.Start()
 
-	// Replace with your actual address and number
-	client := signalclient.NewClient("signal-cli-rest-api:8080", "+18177392137", db)
+	if cfg.PhoneNumber == "" {
+		slog.Error("SIGNAL_PHONE_NUMBER environment variable is required")
+		os.Exit(1)
+	}
+
+	// Use phone number from config
+	client := signalclient.NewClient("signal-cli-rest-api:8080", cfg.PhoneNumber, db)
 
 	go func() {
 		if err := client.Listen(ctx); err != nil {

@@ -7,14 +7,16 @@ type EnvelopeWrapper struct {
 
 // Envelope represents the top-level structure of a received message.
 type Envelope struct {
-	Source       string       `json:"source"`
-	SourceNumber string       `json:"sourceNumber"`
-	SourceUUID   string       `json:"sourceUuid"`
-	SourceName   string       `json:"sourceName"`
-	SourceDevice int          `json:"sourceDevice"`
-	Timestamp    int64        `json:"timestamp"`
-	SyncMessage  *SyncMessage `json:"syncMessage"`
-	DataMessage  *DataMessage `json:"dataMessage"`
+	Source                   string       `json:"source"`
+	SourceNumber             string       `json:"sourceNumber"`
+	SourceUUID               string       `json:"sourceUuid"`
+	SourceName               string       `json:"sourceName"`
+	SourceDevice             int          `json:"sourceDevice"`
+	Timestamp                int64        `json:"timestamp"`
+	ServerReceivedTimestamp  int64        `json:"serverReceivedTimestamp"`
+	ServerDeliveredTimestamp int64        `json:"serverDeliveredTimestamp"`
+	SyncMessage              *SyncMessage `json:"syncMessage"`
+	DataMessage              *DataMessage `json:"dataMessage"`
 }
 
 // SyncMessage contains the actual message content.

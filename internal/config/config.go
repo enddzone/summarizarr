@@ -8,13 +8,15 @@ import (
 
 // Config holds the application configuration.
 type Config struct {
-	LogLevel slog.Level
+	LogLevel    slog.Level
+	PhoneNumber string
 }
 
 // New creates a new Config from environment variables.
 func New() *Config {
 	return &Config{
-		LogLevel: parseLogLevel(os.Getenv("LOG_LEVEL")),
+		LogLevel:    parseLogLevel(os.Getenv("LOG_LEVEL")),
+		PhoneNumber: os.Getenv("SIGNAL_PHONE_NUMBER"),
 	}
 }
 
