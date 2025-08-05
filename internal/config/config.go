@@ -8,15 +8,22 @@ import (
 
 // Config holds the application configuration.
 type Config struct {
-	LogLevel    slog.Level
-	PhoneNumber string
+	LogLevel     slog.Level
+	PhoneNumber  string
+	DatabasePath string
 }
 
 // New creates a new Config from environment variables.
 func New() *Config {
+	databasePath := os.Getenv("DATABASE_PATH")
+	if databasePath == "" {
+		databasePath = "summarizarr.db" // default path
+	}
+
 	return &Config{
-		LogLevel:    parseLogLevel(os.Getenv("LOG_LEVEL")),
-		PhoneNumber: os.Getenv("SIGNAL_PHONE_NUMBER"),
+		LogLevel:     parseLogLevel(os.Getenv("LOG_LEVEL")),
+		PhoneNumber:  os.Getenv("SIGNAL_PHONE_NUMBER"),
+		DatabasePath: databasePath,
 	}
 }
 

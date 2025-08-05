@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"summarizarr/internal/ai"
 	"summarizarr/internal/api"
 	"summarizarr/internal/config"
@@ -23,7 +24,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	db, err := database.NewDB("summarizarr.db")
+	// Ensure the database directory exists
+	dbDir := filepath.Dir(cfg.DatabasePath)
+	if dbDir != "." && dbDir != "" {
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
+			slog.Error("Failed to create database directory", "error", err, "path", dbDir)
+			os.Exit(1)
+		}
+	}
+
+	db, err := database.NewDB(cfg.DatabasePath)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)

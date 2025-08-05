@@ -3,3 +3,5 @@ signal-cli-config
 .env
 summarizarr.db
 .DS_Store
+sample_response.json
+test_parse.db

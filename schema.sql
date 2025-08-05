@@ -17,10 +17,20 @@ CREATE TABLE IF NOT EXISTS messages (
     server_received_timestamp INTEGER,
     server_delivered_timestamp INTEGER,
     message_text TEXT,
-    is_reaction BOOLEAN,
+    message_type TEXT DEFAULT 'message', -- 'message', 'reaction', 'quote'
+    
+    -- Quote fields
+    quote_id INTEGER,
+    quote_author_uuid TEXT,
+    quote_text TEXT,
+    
+    -- Reaction fields
+    is_reaction BOOLEAN DEFAULT FALSE,
     reaction_emoji TEXT,
     reaction_target_author_uuid TEXT,
     reaction_target_timestamp INTEGER,
+    reaction_is_remove BOOLEAN DEFAULT FALSE,
+    
     user_id INTEGER,
     group_id INTEGER,
     FOREIGN KEY (user_id) REFERENCES users (id),

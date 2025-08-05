@@ -45,8 +45,8 @@ type DB interface {
 ```
 
 ### Message Processing Flow
-1. Signal WebSocket → `signal.Envelope` struct → Database storage
-2. Scheduler runs on intervals → Fetches messages → AI summarization → Store summary
+1. Signal WebSocket → Enhanced `signal.Envelope` struct (with Quote/Reaction support) → Database storage
+2. Scheduler runs on intervals → Fetches messages with context → AI summarization (enhanced with quote/reaction awareness) → Store summary
 3. API serves summaries as JSON responses
 
 ### Environment Configuration
@@ -68,6 +68,7 @@ LOG_LEVEL=DEBUG
 | SUMMARIZATION_INTERVAL  | No       | 12h       | How often to generate summaries (e.g., 1h, 12h)  |
 | OPENAI_MODEL            | No       | gpt-4o    | OpenAI model to use                              |
 | LOG_LEVEL               | No       | INFO      | Log level (DEBUG, INFO, WARN, ERROR)             |
+| DATABASE_PATH           | No       | summarizarr.db | Database file path                          |
 
 For local development, copy `.env.example` to `.env` and fill in your values.
 
@@ -95,6 +96,7 @@ go run cmd/summarizarr/main.go
 ### Testing
 ### Testing & Debugging Scripts
 - All custom test and debug scripts are located in `cmd/testing/`
+- `cmd/testing/parse_sample.go`: Tests Signal message parsing with sample data
 - Unit tests: `go test ./...`
 - Example Signal API message format in `internal/signal/message_test.go`
 - Manual testing via Docker compose (no integration tests)
@@ -117,8 +119,10 @@ docker-compose up --build
 ## Database Schema Notes
 - Foreign key relationships: messages → users/groups, summaries → groups
 - Timestamps stored as Unix epoch integers
-- Reaction support built into schema but minimal processing
+- Enhanced message support: quotes (quote_id, quote_author_uuid, quote_text), reactions (reaction_emoji, reaction_target_author), message types (regular, quote, reaction)
 - Schema applied on startup via `db.Init()` reading `schema.sql`
+- Automatic migration system adds missing columns to existing tables
+- Database stored in mounted `./data` directory for persistence
 
 ## Common Tasks
 - **Add new endpoints**: Extend `internal/api/server.go` with new handlers

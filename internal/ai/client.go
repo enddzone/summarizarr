@@ -26,7 +26,22 @@ func NewClient(apiKey, model string) *Client {
 func (c *Client) Summarize(ctx context.Context, messages []database.MessageForSummary) (string, error) {
 	var content string
 	for _, msg := range messages {
-		content += fmt.Sprintf("%s: %s\n", msg.UserName, msg.Text)
+		switch msg.MessageType {
+		case "reaction":
+			if msg.ReactionEmoji != "" {
+				content += fmt.Sprintf("%s reacted with %s\n", msg.UserName, msg.ReactionEmoji)
+			}
+		case "quote":
+			if msg.QuoteText != "" && msg.Text != "" {
+				content += fmt.Sprintf("%s (replying to: \"%s\"): %s\n", msg.UserName, msg.QuoteText, msg.Text)
+			} else if msg.Text != "" {
+				content += fmt.Sprintf("%s: %s\n", msg.UserName, msg.Text)
+			}
+		default: // regular message
+			if msg.Text != "" {
+				content += fmt.Sprintf("%s: %s\n", msg.UserName, msg.Text)
+			}
+		}
 	}
 
 	resp, err := c.CreateChatCompletion(
@@ -36,7 +51,7 @@ func (c *Client) Summarize(ctx context.Context, messages []database.MessageForSu
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleUser,
-					Content: fmt.Sprintf("Please summarize the following conversation. Identify the key topics, any decisions that were made, and any action items. For each point, please indicate which user made the point.\n\n%s", content),
+					Content: fmt.Sprintf("Please summarize the following conversation. The conversation includes regular messages, quoted replies (shown as 'replying to: \"original text\"'), and emoji reactions. Identify the key topics, any decisions that were made, and any action items. For each point, please indicate which user made the point. Pay attention to the context provided by quotes and reactions to understand the flow of conversation.\n\n%s", content),
 				},
 			},
 		},

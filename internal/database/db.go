@@ -31,13 +31,70 @@ func NewDB(dataSourceName string) (*DB, error) {
 
 // Init creates the database schema.
 func (db *DB) Init() error {
+	// First, check if we need to create/update the schema
+	slog.Info("Initializing database schema")
+
 	schema, err := os.ReadFile("schema.sql")
 	if err != nil {
 		return fmt.Errorf("failed to read schema file: %w", err)
 	}
 
+	// Execute the schema - CREATE TABLE IF NOT EXISTS will handle new tables
+	// and existing tables will be left unchanged
 	if _, err := db.Exec(string(schema)); err != nil {
 		return fmt.Errorf("failed to execute schema: %w", err)
+	}
+
+	// Check if we need to add missing columns to existing tables
+	if err := db.migrateSchema(); err != nil {
+		return fmt.Errorf("failed to migrate schema: %w", err)
+	}
+
+	slog.Info("Database schema initialized successfully")
+	return nil
+}
+
+// migrateSchema adds missing columns to existing tables
+func (db *DB) migrateSchema() error {
+	// Check what columns exist in the messages table
+	rows, err := db.Query("PRAGMA table_info(messages)")
+	if err != nil {
+		return fmt.Errorf("failed to get table info: %w", err)
+	}
+	defer rows.Close()
+
+	existingColumns := make(map[string]bool)
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("failed to scan table info: %w", err)
+		}
+		existingColumns[name] = true
+	}
+
+	// List of columns that should exist in the messages table
+	requiredColumns := map[string]string{
+		"message_type":       "TEXT DEFAULT 'message'",
+		"quote_id":           "INTEGER",
+		"quote_author_uuid":  "TEXT",
+		"quote_text":         "TEXT",
+		"reaction_is_remove": "BOOLEAN DEFAULT FALSE",
+	}
+
+	// Add missing columns
+	for column, definition := range requiredColumns {
+		if !existingColumns[column] {
+			alterSQL := fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", column, definition)
+			slog.Info("Adding missing column to messages table", "column", column)
+			if _, err := db.Exec(alterSQL); err != nil {
+				return fmt.Errorf("failed to add column %s: %w", column, err)
+			}
+		}
 	}
 
 	return nil
@@ -45,21 +102,44 @@ func (db *DB) Init() error {
 
 // SaveMessage saves a message to the database.
 func (db *DB) SaveMessage(msg *signal.Envelope) error {
+	// Skip receipt messages - we're not interested in delivery/read receipts
+	if msg.ReceiptMessage != nil {
+		return nil
+	}
+
 	// Extract message content and group info from either DataMessage or SyncMessage
 	var messageText string
 	var groupInfo *signal.GroupInfo
 	var timestamp int64 = msg.Timestamp
+	var messageType string = "message"
+	var quote *signal.Quote
+	var reaction *signal.Reaction
 
 	// Check DataMessage first
 	if msg.DataMessage != nil && msg.DataMessage.GroupInfo != nil {
 		messageText = msg.DataMessage.Message
 		groupInfo = msg.DataMessage.GroupInfo
+		quote = msg.DataMessage.Quote
+		reaction = msg.DataMessage.Reaction
+
+		// Determine message type
+		if reaction != nil {
+			messageType = "reaction"
+		} else if quote != nil {
+			messageType = "quote"
+		}
 	} else if msg.SyncMessage != nil && msg.SyncMessage.SentMessage != nil && msg.SyncMessage.SentMessage.GroupInfo != nil {
 		// Check SyncMessage for sent messages
 		messageText = msg.SyncMessage.SentMessage.Message
 		groupInfo = msg.SyncMessage.SentMessage.GroupInfo
+		reaction = msg.SyncMessage.SentMessage.Reaction
 		if msg.SyncMessage.SentMessage.Timestamp > 0 {
 			timestamp = msg.SyncMessage.SentMessage.Timestamp
+		}
+
+		// Determine message type for sync messages
+		if reaction != nil {
+			messageType = "reaction"
 		}
 	} else {
 		// Not a group message or no recognizable content, ignore
@@ -82,10 +162,45 @@ func (db *DB) SaveMessage(msg *signal.Envelope) error {
 		return fmt.Errorf("failed to find or create group: %w", err)
 	}
 
+	// Prepare values for insertion
+	var quoteID, quoteAuthorUUID, quoteText interface{}
+	var isReaction bool
+	var reactionEmoji, reactionTargetAuthorUUID interface{}
+	var reactionTargetTimestamp interface{}
+	var reactionIsRemove bool
+
+	// Handle quote data
+	if quote != nil {
+		quoteID = quote.ID
+		quoteAuthorUUID = quote.AuthorUUID
+		quoteText = quote.Text
+	}
+
+	// Handle reaction data
+	if reaction != nil {
+		isReaction = true
+		reactionEmoji = reaction.Emoji
+		reactionTargetAuthorUUID = reaction.TargetAuthorUUID
+		reactionTargetTimestamp = reaction.TargetSentTimestamp
+		reactionIsRemove = reaction.IsRemove
+	}
+
 	_, err = tx.Exec(`
-		INSERT INTO messages (timestamp, server_received_timestamp, server_delivered_timestamp, message_text, is_reaction, user_id, group_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, timestamp, msg.ServerReceivedTimestamp, msg.ServerDeliveredTimestamp, messageText, 0, userID, groupID)
+		INSERT INTO messages (
+			timestamp, server_received_timestamp, server_delivered_timestamp, 
+			message_text, message_type,
+			quote_id, quote_author_uuid, quote_text,
+			is_reaction, reaction_emoji, reaction_target_author_uuid, 
+			reaction_target_timestamp, reaction_is_remove,
+			user_id, group_id
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, timestamp, msg.ServerReceivedTimestamp, msg.ServerDeliveredTimestamp,
+		messageText, messageType,
+		quoteID, quoteAuthorUUID, quoteText,
+		isReaction, reactionEmoji, reactionTargetAuthorUUID,
+		reactionTargetTimestamp, reactionIsRemove,
+		userID, groupID)
 	if err != nil {
 		return fmt.Errorf("failed to insert message: %w", err)
 	}
@@ -114,17 +229,29 @@ func (db *DB) findOrCreateUser(tx *sql.Tx, uuid, number, name string) (int64, er
 
 // MessageForSummary holds the data needed to generate a summary.
 type MessageForSummary struct {
-	UserName string
-	Text     string
+	UserName           string
+	Text               string
+	MessageType        string
+	QuoteAuthorUUID    string
+	QuoteText          string
+	ReactionEmoji      string
+	ReactionTargetUUID string
 }
 
 // GetMessagesForSummarization retrieves messages for a given group within a time range.
 func (db *DB) GetMessagesForSummarization(groupID int64, start, end int64) ([]MessageForSummary, error) {
 	rows, err := db.Query(`
-		SELECT u.name, m.message_text
+		SELECT 
+			u.name, 
+			COALESCE(m.message_text, '') as message_text,
+			m.message_type,
+			COALESCE(m.quote_author_uuid, '') as quote_author_uuid,
+			COALESCE(m.quote_text, '') as quote_text,
+			COALESCE(m.reaction_emoji, '') as reaction_emoji,
+			COALESCE(m.reaction_target_author_uuid, '') as reaction_target_uuid
 		FROM messages m
 		JOIN users u ON m.user_id = u.id
-		WHERE m.group_id = ? AND m.timestamp BETWEEN ? AND ? AND m.is_reaction = 0
+		WHERE m.group_id = ? AND m.timestamp BETWEEN ? AND ?
 		ORDER BY m.timestamp ASC
 	`, groupID, start, end)
 	if err != nil {
@@ -135,7 +262,8 @@ func (db *DB) GetMessagesForSummarization(groupID int64, start, end int64) ([]Me
 	var messages []MessageForSummary
 	for rows.Next() {
 		var msg MessageForSummary
-		if err := rows.Scan(&msg.UserName, &msg.Text); err != nil {
+		if err := rows.Scan(&msg.UserName, &msg.Text, &msg.MessageType,
+			&msg.QuoteAuthorUUID, &msg.QuoteText, &msg.ReactionEmoji, &msg.ReactionTargetUUID); err != nil {
 			return nil, fmt.Errorf("failed to scan message: %w", err)
 		}
 		messages = append(messages, msg)
