@@ -22,8 +22,8 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SIGNAL_PHONE_NUMBER=${SIGNAL_PHONE_NUMBER}
-      - SUMMARIZATION_INTERVAL=3h
-      - OPENAI_MODEL=gpt-4o
+      - SUMMARIZATION_INTERVAL=1h
+      - OPENAI_MODEL=gpt-4o-mini
       - LOG_LEVEL=DEBUG
       - DATABASE_PATH=/app/data/summarizarr.db
     depends_on:

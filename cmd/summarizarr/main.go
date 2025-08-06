@@ -47,7 +47,7 @@ func main() {
 
 	aiModel := os.Getenv("OPENAI_MODEL")
 	if aiModel == "" {
-		aiModel = "gpt-4o"
+		aiModel = "gpt-4o-mini" // Better cost/performance for summarization
 	}
 
 	aiClient := ai.NewClient(os.Getenv("OPENAI_API_KEY"), aiModel)

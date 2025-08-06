@@ -60,18 +60,24 @@ func (s *Scheduler) runSummarization(ctx context.Context) {
 }
 
 func (s *Scheduler) summarizeGroup(ctx context.Context, groupID int64) {
-	end := time.Now().Unix()
-	start := time.Now().Add(-s.interval).Unix()
+	// Use millisecond timestamps to match message storage format
+	endMs := time.Now().UnixMilli()
+	startMs := time.Now().Add(-s.interval).UnixMilli()
 
-	messages, err := s.db.GetMessagesForSummarization(groupID, start, end)
+	slog.Debug("Summarizing group", "group_id", groupID, "start_ms", startMs, "end_ms", endMs)
+
+	messages, err := s.db.GetMessagesForSummarization(groupID, startMs, endMs)
 	if err != nil {
 		slog.Error("Error getting messages for summarization", "group_id", groupID, "error", err)
 		return
 	}
 
 	if len(messages) == 0 {
+		slog.Debug("No messages found for summarization", "group_id", groupID)
 		return
 	}
+
+	slog.Info("Generating summary", "group_id", groupID, "message_count", len(messages))
 
 	summary, err := s.aiClient.Summarize(ctx, messages)
 	if err != nil {
@@ -79,10 +85,10 @@ func (s *Scheduler) summarizeGroup(ctx context.Context, groupID int64) {
 		return
 	}
 
-	if err := s.db.SaveSummary(groupID, summary, start, end); err != nil {
+	if err := s.db.SaveSummary(groupID, summary, startMs, endMs); err != nil {
 		slog.Error("Error saving summary", "group_id", groupID, "error", err)
 		return
 	}
 
-	slog.Info("Saved summary", "group_id", groupID)
+	slog.Info("Saved summary", "group_id", groupID, "summary_length", len(summary))
 }
