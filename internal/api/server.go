@@ -76,8 +76,8 @@ func (s *Server) handleGetSummaries(w http.ResponseWriter, r *http.Request) {
 			ID:      summary.ID,
 			GroupID: summary.GroupID,
 			Text:    summary.Text,
-			Start:   time.Unix(summary.Start, 0),
-			End:     time.Unix(summary.End, 0),
+			Start:   time.UnixMilli(summary.Start),
+			End:     time.UnixMilli(summary.End),
 		}
 
 		// Parse created_at timestamp - try multiple formats
