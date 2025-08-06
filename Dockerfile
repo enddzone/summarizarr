@@ -10,8 +10,14 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /summarizarr ./cmd/summarizarr
 
-# Final stage
-FROM alpine:latest
+# Final stage - use Ubuntu for glibc compatibility
+FROM ubuntu:24.04
+
+# Install required packages for Ollama
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
 

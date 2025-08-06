@@ -19,13 +19,18 @@ services:
       - "8081:8081"
     volumes:
       - "./data:/app/data"
+      - "./models:/app/models"  # Mount local models directory
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SIGNAL_PHONE_NUMBER=${SIGNAL_PHONE_NUMBER}
       - SUMMARIZATION_INTERVAL=1h
-      - OPENAI_MODEL=gpt-4o-mini
       - LOG_LEVEL=DEBUG
       - DATABASE_PATH=/app/data/summarizarr.db
+      # Local AI configuration
+      - AI_BACKEND=local
+      - OLLAMA_AUTO_DOWNLOAD=true
+      - OLLAMA_KEEP_ALIVE=5m
+      - OLLAMA_HOST=127.0.0.1:11434
+      - MODELS_PATH=/app/models
     depends_on:
       signal-cli-rest-api:
         condition: service_healthy

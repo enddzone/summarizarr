@@ -5,3 +5,5 @@ summarizarr.db
 .DS_Store
 sample_response.json
 test_parse.db
+models
+summarizarr
