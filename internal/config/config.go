@@ -18,6 +18,8 @@ type Config struct {
 	OllamaHost            string
 	ModelsPath            string
 	SummarizationInterval string
+	OpenAIAPIKey          string
+	OpenAIModel           string
 }
 
 // New creates a new Config from environment variables.
@@ -62,6 +64,12 @@ func New() *Config {
 		summarizationInterval = "12h" // default
 	}
 
+	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
+	openaiModel := os.Getenv("OPENAI_MODEL")
+	if openaiModel == "" {
+		openaiModel = "gpt-4o" // default model
+	}
+
 	return &Config{
 		LogLevel:              parseLogLevel(os.Getenv("LOG_LEVEL")),
 		PhoneNumber:           os.Getenv("SIGNAL_PHONE_NUMBER"),
@@ -73,6 +81,8 @@ func New() *Config {
 		OllamaHost:            ollamaHost,
 		ModelsPath:            modelsPath,
 		SummarizationInterval: summarizationInterval,
+		OpenAIAPIKey:          openaiAPIKey,
+		OpenAIModel:           openaiModel,
 	}
 }
 

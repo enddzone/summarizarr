@@ -1,12 +1,13 @@
 # Copilot Instructions for Summarizarr
 
 ## Project Overview
-Summarizarr is a Signal message summarizer that connects to Signal groups via WebSocket, stores messages in SQLite, and generates periodic AI summaries using OpenAI's API. The application runs as a containerized service alongside signal-cli-rest-api.
+Summarizarr is a Signal message summarizer that connects to Signal groups via WebSocket, stores messages in SQLite, and generates periodic AI summaries using local AI (Ollama) or cloud AI (OpenAI-compatible APIs). The application runs as a containerized service alongside signal-cli-rest-api.
 
 ## Architecture
 - **Signal Integration**: Connects to `signal-cli-rest-api` via WebSocket (`internal/signal/client.go`) to receive real-time messages
 - **Database Layer**: SQLite with schema defined in `schema.sql` - stores users, groups, messages, and summaries
-- **AI Processing**: OpenAI client (`internal/ai/client.go`) with configurable scheduling (`internal/ai/scheduler.go`)
+- **AI Processing**: Unified AI client (`internal/ai/client.go`) with backend selection (Ollama/OpenAI) and configurable scheduling (`internal/ai/scheduler.go`)
+- **Backend Abstraction**: Supports local AI (`internal/ollama/client.go`) and cloud AI (`internal/openai/client.go`) with consistent prompt handling
 - **API Server**: Simple HTTP server (`internal/api/server.go`) exposing summaries endpoint on port 8081
 - **Docker Setup**: Two-service compose with signal-cli-rest-api dependency and health checks
 
@@ -49,10 +50,17 @@ type DB interface {
 2. Scheduler runs on intervals → Fetches messages with context → AI summarization (enhanced with quote/reaction awareness) → Store summary
 3. API serves summaries as JSON responses
 
+### Prompt Management
+- **Centralized Prompt**: Single `SummarizationPrompt` template in `internal/ai/client.go`
+- **Message Formatting**: `FormatMessagesForLLM()` function handles all message types with anonymization
+- **Backend Consistency**: Both Ollama and OpenAI backends receive identical prompts
+- **Post-Processing**: User ID substitution with real names after LLM processing
+
 ### Environment Configuration
 All configuration is managed via environment variables and a `.env` file for local development. Example:
 
 ```
+AI_BACKEND=openai
 OPENAI_API_KEY=your_key_here
 SIGNAL_PHONE_NUMBER=+18177392137
 SUMMARIZATION_INTERVAL=1h
@@ -63,10 +71,12 @@ LOG_LEVEL=DEBUG
 ### Required Environment Variables
 | Variable                | Required | Default   | Description                                      |
 |-------------------------|----------|-----------|--------------------------------------------------|
-| OPENAI_API_KEY          | Yes      | -         | OpenAI API key for AI summarization              |
+| AI_BACKEND              | No       | local     | AI backend: 'local' (Ollama) or 'openai'        |
+| OPENAI_API_KEY          | No*      | -         | OpenAI API key (*required when AI_BACKEND=openai)|
 | SIGNAL_PHONE_NUMBER     | Yes      | -         | Signal phone number (e.g., +1234567890)          |
 | SUMMARIZATION_INTERVAL  | No       | 12h       | How often to generate summaries (e.g., 1h, 12h)  |
 | OPENAI_MODEL            | No       | gpt-4o    | OpenAI model to use                              |
+| LOCAL_MODEL             | No       | llama3.2:1b | Local Ollama model to use                      |
 | LOG_LEVEL               | No       | INFO      | Log level (DEBUG, INFO, WARN, ERROR)             |
 | DATABASE_PATH           | No       | summarizarr.db | Database file path                          |
 

@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"summarizarr/internal/database"
 	"time"
 )
 
@@ -251,29 +250,8 @@ func (c *Client) ListModels(ctx context.Context) (*ListModelsResponse, error) {
 	return &listResp, nil
 }
 
-// Summarize generates a summary of messages using the local model
-func (c *Client) Summarize(ctx context.Context, messages []database.MessageForSummary) (string, error) {
-	// Format messages into conversation content
-	var content strings.Builder
-	for _, msg := range messages {
-		switch msg.MessageType {
-		case "reaction":
-			if msg.ReactionEmoji != "" {
-				content.WriteString(fmt.Sprintf("%s reacted with %s\n", msg.UserName, msg.ReactionEmoji))
-			}
-		case "quote":
-			if msg.QuoteText != "" && msg.Text != "" {
-				content.WriteString(fmt.Sprintf("%s (replying to: \"%s\"): %s\n", msg.UserName, msg.QuoteText, msg.Text))
-			} else if msg.Text != "" {
-				content.WriteString(fmt.Sprintf("%s: %s\n", msg.UserName, msg.Text))
-			}
-		default: // regular message
-			if msg.Text != "" {
-				content.WriteString(fmt.Sprintf("%s: %s\n", msg.UserName, msg.Text))
-			}
-		}
-	}
-
+// Summarize generates a summary using the local model with the provided prompt
+func (c *Client) Summarize(ctx context.Context, prompt string) (string, error) {
 	// Create chat completion request
 	chatReq := ChatCompletionRequest{
 		Model:       c.model,
@@ -281,17 +259,8 @@ func (c *Client) Summarize(ctx context.Context, messages []database.MessageForSu
 		Stream:      false,
 		Messages: []ChatCompletionMessage{
 			{
-				Role: "user",
-				Content: fmt.Sprintf(`Please provide a concise summary of this Signal group conversation. Focus on:
-- Key topics discussed
-- Important decisions or conclusions  
-- Action items or next steps
-- Notable reactions or responses
-
-Conversation format: Regular messages, quoted replies (shown as 'replying to: "original text"'), and emoji reactions.
-
-Conversation:
-%s`, content.String()),
+				Role:    "user",
+				Content: prompt,
 			},
 		},
 	}
@@ -385,7 +354,7 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 // WarmupModel loads the model into memory by sending a simple chat completion request
 func (c *Client) WarmupModel(ctx context.Context) error {
 	slog.Info("Warming up model...", "model", c.model)
-	
+
 	// Create a simple chat completion request to warm up the model
 	chatReq := ChatCompletionRequest{
 		Model: c.model,

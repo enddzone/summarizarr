@@ -19,6 +19,8 @@ type DB interface {
 	GetMessagesForSummarization(groupID int64, start, end int64) ([]database.MessageForSummary, error)
 	GetGroups() ([]int64, error)
 	SaveSummary(groupID int64, summaryText string, start, end int64) error
+	GetUserNameByID(userID int64) (string, error)
+	GetGroupNameByID(groupID int64) (string, error)
 }
 
 // NewScheduler creates a new scheduler.

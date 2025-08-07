@@ -4,6 +4,7 @@ go 1.24.5
 
 require (
 	github.com/coder/websocket v1.8.13
+	github.com/sashabaranov/go-openai v1.40.5
 	modernc.org/sqlite v1.38.2
 )
 

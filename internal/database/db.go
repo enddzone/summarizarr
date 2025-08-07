@@ -229,6 +229,8 @@ func (db *DB) findOrCreateUser(tx *sql.Tx, uuid, number, name string) (int64, er
 
 // MessageForSummary holds the data needed to generate a summary.
 type MessageForSummary struct {
+	UserID             int64
+	GroupID            int64
 	UserName           string
 	Text               string
 	MessageType        string
@@ -241,19 +243,21 @@ type MessageForSummary struct {
 // GetMessagesForSummarization retrieves messages for a given group within a time range.
 func (db *DB) GetMessagesForSummarization(groupID int64, start, end int64) ([]MessageForSummary, error) {
 	rows, err := db.Query(`
-		SELECT 
-			u.name, 
-			COALESCE(m.message_text, '') as message_text,
-			m.message_type,
-			COALESCE(m.quote_author_uuid, '') as quote_author_uuid,
-			COALESCE(m.quote_text, '') as quote_text,
-			COALESCE(m.reaction_emoji, '') as reaction_emoji,
-			COALESCE(m.reaction_target_author_uuid, '') as reaction_target_uuid
-		FROM messages m
-		JOIN users u ON m.user_id = u.id
-		WHERE m.group_id = ? AND m.timestamp BETWEEN ? AND ?
-		ORDER BY m.timestamp ASC
-	`, groupID, start, end)
+SELECT 
+	m.user_id,
+	m.group_id,
+	u.name, 
+	COALESCE(m.message_text, '') as message_text,
+	m.message_type,
+	COALESCE(m.quote_author_uuid, '') as quote_author_uuid,
+	COALESCE(m.quote_text, '') as quote_text,
+	COALESCE(m.reaction_emoji, '') as reaction_emoji,
+	COALESCE(m.reaction_target_author_uuid, '') as reaction_target_uuid
+FROM messages m
+JOIN users u ON m.user_id = u.id
+WHERE m.group_id = ? AND m.timestamp BETWEEN ? AND ?
+ORDER BY m.timestamp ASC
+`, groupID, start, end)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query messages: %w", err)
 	}
@@ -262,7 +266,7 @@ func (db *DB) GetMessagesForSummarization(groupID int64, start, end int64) ([]Me
 	var messages []MessageForSummary
 	for rows.Next() {
 		var msg MessageForSummary
-		if err := rows.Scan(&msg.UserName, &msg.Text, &msg.MessageType,
+		if err := rows.Scan(&msg.UserID, &msg.GroupID, &msg.UserName, &msg.Text, &msg.MessageType,
 			&msg.QuoteAuthorUUID, &msg.QuoteText, &msg.ReactionEmoji, &msg.ReactionTargetUUID); err != nil {
 			return nil, fmt.Errorf("failed to scan message: %w", err)
 		}
@@ -360,4 +364,24 @@ func (db *DB) findOrCreateGroup(tx *sql.Tx, groupID, name string) (int64, error)
 	}
 
 	return res.LastInsertId()
+}
+
+// GetUserNameByID retrieves the user name by internal user ID.
+func (db *DB) GetUserNameByID(userID int64) (string, error) {
+	var name string
+	err := db.QueryRow("SELECT name FROM users WHERE id = ?", userID).Scan(&name)
+	if err != nil {
+		return "", fmt.Errorf("failed to get user name for ID %d: %w", userID, err)
+	}
+	return name, nil
+}
+
+// GetGroupNameByID retrieves the group name by internal group ID.
+func (db *DB) GetGroupNameByID(groupID int64) (string, error) {
+	var name string
+	err := db.QueryRow("SELECT name FROM groups WHERE id = ?", groupID).Scan(&name)
+	if err != nil {
+		return "", fmt.Errorf("failed to get group name for ID %d: %w", groupID, err)
+	}
+	return name, nil
 }

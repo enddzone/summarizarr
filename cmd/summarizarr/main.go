@@ -79,7 +79,7 @@ func main() {
 	}
 
 	// Create AI client (now uses local Ollama)
-	aiClient, err := ai.NewClient(cfg)
+	aiClient, err := ai.NewClient(cfg, db)
 	if err != nil {
 		slog.Error("Failed to create AI client", "error", err)
 		os.Exit(1)
