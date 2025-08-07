@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"summarizarr/internal/signal"
 
 	_ "modernc.org/sqlite"
@@ -309,6 +311,7 @@ func (db *DB) SaveSummary(groupID int64, summaryText string, start, end int64) e
 type Summary struct {
 	ID        int64  `json:"id"`
 	GroupID   int64  `json:"group_id"`
+	GroupName string `json:"group_name"`
 	Text      string `json:"text"`
 	Start     int64  `json:"start_timestamp"`
 	End       int64  `json:"end_timestamp"`
@@ -317,10 +320,74 @@ type Summary struct {
 
 // GetSummaries retrieves all summaries from the database ordered by creation time.
 func (db *DB) GetSummaries() ([]Summary, error) {
-	slog.Debug("Executing GetSummaries query")
-	rows, err := db.Query("SELECT id, group_id, summary_text, start_timestamp, end_timestamp, created_at FROM summaries ORDER BY created_at DESC")
+	return db.GetSummariesWithFilters("", "", "", "")
+}
+
+// GetSummariesWithFilters retrieves summaries with optional filtering
+func (db *DB) GetSummariesWithFilters(search, groups, startTimeStr, endTimeStr string) ([]Summary, error) {
+	slog.Debug("Executing GetSummariesWithFilters query",
+		"search", search,
+		"groups", groups,
+		"start_time", startTimeStr,
+		"end_time", endTimeStr)
+
+	// Build the query with optional filters
+	query := `SELECT s.id, s.group_id, COALESCE(g.name, 'Group ' || s.group_id) as group_name, s.summary_text, s.start_timestamp, s.end_timestamp, s.created_at 
+	          FROM summaries s 
+	          LEFT JOIN groups g ON s.group_id = g.id 
+	          WHERE 1=1`
+	var args []interface{}
+
+	// Add search filter
+	if search != "" {
+		query += " AND (s.summary_text LIKE ? OR g.name LIKE ?)"
+		searchTerm := "%" + search + "%"
+		args = append(args, searchTerm, searchTerm)
+	}
+
+	// Add group filter
+	if groups != "" {
+		groupIDs := strings.Split(groups, ",")
+		if len(groupIDs) > 0 {
+			placeholders := make([]string, len(groupIDs))
+			for i, groupID := range groupIDs {
+				placeholders[i] = "?"
+				args = append(args, strings.TrimSpace(groupID))
+			}
+			query += fmt.Sprintf(" AND s.group_id IN (%s)", strings.Join(placeholders, ","))
+		}
+	}
+
+	// Add time range filters (convert seconds to milliseconds for database)
+	// Use start_timestamp/end_timestamp if available, otherwise fall back to created_at
+	if startTimeStr != "" {
+		// For start time: summary should end after this time (or be created after this time if timestamps are null)
+		query += " AND (CASE WHEN s.end_timestamp IS NOT NULL THEN s.end_timestamp >= ? ELSE datetime(s.created_at) >= datetime(?, 'unixepoch') END)"
+		// Convert Unix seconds to milliseconds for database comparison
+		if startTimeSec, err := strconv.ParseInt(startTimeStr, 10, 64); err == nil {
+			args = append(args, startTimeSec*1000, startTimeSec)
+		} else {
+			args = append(args, startTimeStr, startTimeStr)
+		}
+	}
+	if endTimeStr != "" {
+		// For end time: summary should start before this time (or be created before this time if timestamps are null)
+		query += " AND (CASE WHEN s.start_timestamp IS NOT NULL THEN s.start_timestamp <= ? ELSE datetime(s.created_at) <= datetime(?, 'unixepoch') END)"
+		// Convert Unix seconds to milliseconds for database comparison
+		if endTimeSec, err := strconv.ParseInt(endTimeStr, 10, 64); err == nil {
+			args = append(args, endTimeSec*1000, endTimeSec)
+		} else {
+			args = append(args, endTimeStr, endTimeStr)
+		}
+	}
+
+	query += " ORDER BY s.created_at DESC"
+
+	slog.Debug("Executing query", "query", query, "args", args)
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
-		slog.Error("Failed to execute GetSummaries query", "error", err)
+		slog.Error("Failed to execute GetSummariesWithFilters query", "error", err)
 		return nil, fmt.Errorf("failed to query summaries: %w", err)
 	}
 	defer rows.Close()
@@ -330,11 +397,11 @@ func (db *DB) GetSummaries() ([]Summary, error) {
 	for rows.Next() {
 		rowCount++
 		var s Summary
-		if err := rows.Scan(&s.ID, &s.GroupID, &s.Text, &s.Start, &s.End, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.GroupID, &s.GroupName, &s.Text, &s.Start, &s.End, &s.CreatedAt); err != nil {
 			slog.Error("Failed to scan summary row", "error", err, "rowCount", rowCount)
 			return nil, fmt.Errorf("failed to scan summary: %w", err)
 		}
-		slog.Debug("Scanned summary", "id", s.ID, "groupId", s.GroupID, "textLength", len(s.Text))
+		slog.Debug("Scanned summary", "id", s.ID, "groupId", s.GroupID, "groupName", s.GroupName, "textLength", len(s.Text))
 		summaries = append(summaries, s)
 	}
 
@@ -343,7 +410,7 @@ func (db *DB) GetSummaries() ([]Summary, error) {
 		return nil, fmt.Errorf("error iterating summary rows: %w", err)
 	}
 
-	slog.Debug("GetSummaries completed", "count", len(summaries), "rowsProcessed", rowCount)
+	slog.Debug("GetSummariesWithFilters completed", "count", len(summaries), "rowsProcessed", rowCount)
 	return summaries, nil
 }
 

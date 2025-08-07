@@ -7,3 +7,11 @@ sample_response.json
 test_parse.db
 models
 summarizarr
+web/node_modules
+web/.next
+web/.env.local
+web/.env
+web/.DS_Store
+web/.eslintcache
+web/.vscode
+web/package-lock.json
