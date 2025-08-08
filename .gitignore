@@ -14,4 +14,3 @@ web/.env
 web/.DS_Store
 web/.eslintcache
 web/.vscode
-web/package-lock.json
