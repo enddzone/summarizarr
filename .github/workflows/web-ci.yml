@@ -26,16 +26,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node.js 20
+      - name: Use Node.js 20 (npm)
+        if: steps.pm.outputs.manager == 'npm'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
-          cache-dependency-path: |
-            web/package-lock.json
-            web/pnpm-lock.yaml
-            web/yarn.lock
+          cache-dependency-path: web/package-lock.json
 
+      - name: Use Node.js 20 (pnpm)
+        if: steps.pm.outputs.manager == 'pnpm'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Use Node.js 20 (yarn)
+        if: steps.pm.outputs.manager == 'yarn'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
+          cache-dependency-path: web/yarn.lock
       - name: Detect package manager
         id: pm
         run: |
