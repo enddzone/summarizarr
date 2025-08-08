@@ -42,6 +42,7 @@ export interface FilterOptions {
     end: Date
   }
   searchQuery: string
+  activePreset?: 'all-time' | 'today' | 'yesterday' | 'morning' | '6h' | '12h'
 }
 
 export interface SignalConfig {

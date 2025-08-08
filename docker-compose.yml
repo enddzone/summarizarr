@@ -22,7 +22,7 @@ services:
       - "./models:/app/models"
     environment:
       - SIGNAL_PHONE_NUMBER=${SIGNAL_PHONE_NUMBER}
-      - SUMMARIZATION_INTERVAL=1h
+      - SUMMARIZATION_INTERVAL=3h
       - LOG_LEVEL=DEBUG
       - DATABASE_PATH=/app/data/summarizarr.db
       - AI_BACKEND=local

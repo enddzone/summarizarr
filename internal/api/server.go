@@ -30,11 +30,39 @@ func NewServer(addr string, db *sql.DB) *Server {
 	}
 
 	mux.HandleFunc("/summaries", s.handleGetSummaries)
+	mux.HandleFunc("/summaries/", s.handleDeleteSummary) // DELETE /summaries/{id}
 	mux.HandleFunc("/groups", s.handleGetGroups)
 	mux.HandleFunc("/export", s.handleExport)
 	mux.HandleFunc("/signal/config", s.handleSignalConfig)
 
 	return s
+}
+
+// handleDeleteSummary handles DELETE /summaries/{id}
+func (s *Server) handleDeleteSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.NotFound(w, r)
+		return
+	}
+	// Expected path: /summaries/{id}
+	// Trim prefix and extract the id
+	idStr := r.URL.Path[len("/summaries/"):]
+	if idStr == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	var id int64
+	if _, err := fmt.Sscan(idStr, &id); err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if err := s.db.DeleteSummary(id); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to delete summary", "error", err, "id", id)
+		http.Error(w, "failed to delete summary", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ok":true}`))
 }
 
 // Start starts the API server.

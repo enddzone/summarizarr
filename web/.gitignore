@@ -1,0 +1,19 @@
+# Next.js build output
+.next/
+out/
+
+# Environment files
+.env.local
+.env.*.local
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+
+# Node modules
+node_modules/
+
+# Tailwind CSS JIT cache
+.tailwind/
+
+# Misc cache
+.cache/

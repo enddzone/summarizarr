@@ -414,6 +414,19 @@ func (db *DB) GetSummariesWithFilters(search, groups, startTimeStr, endTimeStr s
 	return summaries, nil
 }
 
+// DeleteSummary removes a summary by its ID.
+func (db *DB) DeleteSummary(id int64) error {
+	res, err := db.Exec("DELETE FROM summaries WHERE id = ?", id)
+	if err != nil {
+		return fmt.Errorf("failed to delete summary: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Not found is treated as no-op
+		slog.Warn("DeleteSummary: no rows affected", "id", id)
+	}
+	return nil
+}
+
 func (db *DB) findOrCreateGroup(tx *sql.Tx, groupID, name string) (int64, error) {
 	var id int64
 	err := tx.QueryRow("SELECT id FROM groups WHERE group_id = ?", groupID).Scan(&id)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Header } from '@/components/header'
 import { FilterPanel } from '@/components/filter-panel'
 import { SummaryList } from '@/components/summary-list'
@@ -20,10 +20,11 @@ export function SummaryDashboard() {
   const [filters, setFilters] = useState<FilterOptions>({
     groups: [],
     timeRange: {
-      start: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+      start: new Date(0), // Unix epoch (1970) - represents "All time"
       end: new Date(),
     },
     searchQuery: '',
+    activePreset: 'all-time',
   })
   const [signalConfig, setSignalConfig] = useState<SignalConfig>({
     phoneNumber: '',
@@ -34,35 +35,56 @@ export function SummaryDashboard() {
   
   const { toast } = useToast()
 
-  // Fetch initial data
+  // Restore view mode from localStorage on mount
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        await fetchGroups()
-        await fetchSummaries()
-        await fetchSignalConfig()
-      } finally {
-        setLoading(false)
+    try {
+      const savedViewMode = localStorage.getItem('summarizarr-view-mode') as ViewMode
+      if (savedViewMode && (savedViewMode === 'timeline' || savedViewMode === 'cards')) {
+        setViewMode(savedViewMode)
       }
+    } catch (error) {
+      console.warn('Failed to restore view mode from localStorage:', error)
     }
-    loadData()
   }, [])
 
-  // Fetch summaries when filters change
+  // Save view mode to localStorage when it changes
   useEffect(() => {
-    if (!loading) {
-      fetchSummaries()
+    try {
+      localStorage.setItem('summarizarr-view-mode', viewMode)
+    } catch (error) {
+      console.warn('Failed to save view mode to localStorage:', error)
     }
-  }, [filters, sortOrder])
+  }, [viewMode])
 
-  const fetchSummaries = async () => {
+  // Define functions with useCallback to stabilize references
+  const fetchSummaries = useCallback(async () => {
     try {
       const params = new URLSearchParams({
         sort: sortOrder,
         search: filters.searchQuery,
-        start_time: Math.floor(filters.timeRange.start.getTime() / 1000).toString(),
-        end_time: Math.floor(filters.timeRange.end.getTime() / 1000).toString(),
       })
+
+      // Only add time range filters if not "All time"
+      // Check both the epoch date and the active preset to determine if this is "all time"
+      const isAllTime = filters.timeRange.start.getTime() === 0 && filters.activePreset === 'all-time'
+      
+      console.log('=== fetchSummaries Debug ===')
+      console.log('filters.timeRange.start:', filters.timeRange.start)
+      console.log('filters.timeRange.start.getTime():', filters.timeRange.start.getTime())
+      console.log('filters.timeRange.end:', filters.timeRange.end)
+      console.log('filters.activePreset:', filters.activePreset)
+      console.log('isAllTime calculated:', isAllTime)
+      console.log('=== End Debug ===')
+      
+      if (!isAllTime) {
+        const startTime = Math.floor(filters.timeRange.start.getTime() / 1000).toString()
+        const endTime = Math.floor(filters.timeRange.end.getTime() / 1000).toString()
+        console.log('Adding time parameters:', { startTime, endTime })
+        params.append('start_time', startTime)
+        params.append('end_time', endTime)
+      } else {
+        console.log('Skipping time parameters (all-time mode)')
+      }
 
       if (filters.groups.length > 0) {
         params.append('groups', filters.groups.join(','))
@@ -87,15 +109,16 @@ export function SummaryDashboard() {
         variant: 'destructive',
       })
     }
-  }
+  }, [sortOrder, filters, toast])
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     try {
       const response = await fetch('/api/groups')
       if (!response.ok) throw new Error('Failed to fetch groups')
       
       const data = await response.json()
-      setGroups(Array.isArray(data) ? data : data.groups || [])
+      const groupsData = Array.isArray(data) ? data : data.groups || []
+      setGroups(groupsData)
     } catch (error) {
       console.error('Error fetching groups:', error)
       toast({
@@ -104,18 +127,51 @@ export function SummaryDashboard() {
         variant: 'destructive',
       })
     }
-  }
+  }, [toast])
 
-  const fetchSignalConfig = async () => {
+  const fetchSignalConfig = useCallback(async () => {
     try {
       const response = await fetch('/api/signal/config')
-      if (!response.ok) throw new Error('Failed to fetch Signal config')
+      if (!response.ok) throw new Error('Failed to fetch signal config')
       
       const data = await response.json()
       setSignalConfig(data)
     } catch (error) {
-      console.error('Error fetching Signal config:', error)
-      // Don't show error toast for signal config as it might not be set up yet
+      console.error('Error fetching signal config:', error)
+      // Signal config is optional, so we don't show an error toast
+    }
+  }, [])
+
+  // Fetch initial data
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        await fetchGroups()
+        await fetchSummaries()
+        await fetchSignalConfig()
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [fetchGroups, fetchSummaries, fetchSignalConfig])
+
+  // Fetch summaries when filters change
+  useEffect(() => {
+    if (!loading) {
+      fetchSummaries()
+    }
+  }, [filters, sortOrder, loading, fetchSummaries])
+
+  const handleDelete = async (id: number) => {
+    try {
+      const res = await fetch(`/api/summaries/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete summary')
+      setSummaries((prev) => prev.filter((s) => s.id !== id))
+      toast({ title: 'Deleted', description: 'Summary removed.' })
+    } catch (e) {
+      console.error('Delete failed', e)
+      toast({ title: 'Delete failed', description: 'Could not delete summary.', variant: 'destructive' })
     }
   }
 
@@ -165,7 +221,7 @@ export function SummaryDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50/30 via-background to-indigo-50/20">
+    <div className="min-h-screen">
       <Header
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -176,7 +232,7 @@ export function SummaryDashboard() {
         signalConfig={signalConfig}
       />
       
-      <div className="container mx-auto px-4 py-6 space-y-6">
+      <div className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <FilterPanel
           filters={filters}
           onFiltersChange={setFilters}
@@ -188,9 +244,11 @@ export function SummaryDashboard() {
             <p className="text-muted-foreground">No summaries found</p>
           </div>
         ) : viewMode === 'timeline' ? (
-          <SummaryList summaries={summaries} />
+          <div className="overflow-x-auto">
+            <SummaryList summaries={summaries} onDelete={handleDelete} />
+          </div>
         ) : (
-          <SummaryCards summaries={summaries} />
+          <SummaryCards summaries={summaries} onDelete={handleDelete} />
         )}
       </div>
 
