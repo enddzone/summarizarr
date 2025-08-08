@@ -17,14 +17,18 @@ export function SummaryDashboard() {
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
-  const [filters, setFilters] = useState<FilterOptions>({
-    groups: [],
-    timeRange: {
-      start: new Date(0), // Unix epoch (1970) - represents "All time"
-      end: new Date(),
-    },
-    searchQuery: '',
-    activePreset: 'all-time',
+  const [filters, setFilters] = useState<FilterOptions>(() => {
+    // Default to "Today" instead of "All time"
+    const now = new Date();
+    return {
+      groups: [],
+      timeRange: {
+        start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), // Start of today
+        end: now, // Current time
+      },
+      searchQuery: '',
+      activePreset: 'today',
+    }
   })
   const [signalConfig, setSignalConfig] = useState<SignalConfig>({
     phoneNumber: '',

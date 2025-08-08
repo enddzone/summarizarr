@@ -25,7 +25,9 @@ services:
       - SUMMARIZATION_INTERVAL=3h
       - LOG_LEVEL=DEBUG
       - DATABASE_PATH=/app/data/summarizarr.db
-      - AI_BACKEND=local
+      - AI_BACKEND=${AI_BACKEND}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
       - OLLAMA_AUTO_DOWNLOAD=true
       - OLLAMA_KEEP_ALIVE=5m
       - OLLAMA_HOST=127.0.0.1:11434

@@ -23,6 +23,12 @@ func main() {
 
 	slog.Info("Summarizarr starting...")
 
+	// Validate backend-specific configuration
+	if err := validateConfig(cfg); err != nil {
+		slog.Error("Configuration validation failed", "error", err)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
@@ -53,44 +59,64 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize Ollama manager
-	ollamaManager := ollama.NewManager(cfg.ModelsPath, cfg.OllamaHost)
+	// Initialize AI backend based on configuration
+	var ollamaManager *ollama.Manager
+	if cfg.AIBackend == "local" {
+		slog.Info("AI_BACKEND=local detected. Initializing Ollama backend...")
 
-	// Start Ollama server if auto-download is enabled
-	if cfg.OllamaAutoDownload {
-		slog.Info("Ensuring Ollama is installed...")
-		if err := ollamaManager.EnsureInstalled(ctx); err != nil {
-			slog.Error("Failed to install Ollama", "error", err)
+		// Ensure the models directory exists for Ollama
+		if err := os.MkdirAll(cfg.ModelsPath, 0755); err != nil {
+			slog.Error("Failed to create models directory", "error", err, "path", cfg.ModelsPath)
 			os.Exit(1)
 		}
 
-		slog.Info("Starting Ollama server...")
-		if err := ollamaManager.Start(ctx); err != nil {
-			slog.Error("Failed to start Ollama server", "error", err)
-			os.Exit(1)
-		}
+		ollamaManager = ollama.NewManager(cfg.ModelsPath, cfg.OllamaHost)
 
-		// Ensure Ollama is stopped on shutdown
-		defer func() {
-			if err := ollamaManager.Stop(); err != nil {
-				slog.Error("Failed to stop Ollama server", "error", err)
+		// Start Ollama server if auto-download is enabled
+		if cfg.OllamaAutoDownload {
+			slog.Info("Ensuring Ollama is installed...")
+			if err := ollamaManager.EnsureInstalled(ctx); err != nil {
+				slog.Error("Failed to install Ollama", "error", err)
+				os.Exit(1)
 			}
-		}()
+
+			slog.Info("Starting Ollama server...")
+			if err := ollamaManager.Start(ctx); err != nil {
+				slog.Error("Failed to start Ollama server", "error", err)
+				os.Exit(1)
+			}
+
+			// Ensure Ollama is stopped on shutdown
+			defer func() {
+				if err := ollamaManager.Stop(); err != nil {
+					slog.Error("Failed to stop Ollama server", "error", err)
+				}
+			}()
+		}
+	} else if cfg.AIBackend == "openai" {
+		slog.Info("AI_BACKEND=openai detected. Initializing OpenAI backend...")
+
+		// Validate required OpenAI configuration
+		if cfg.OpenAIAPIKey == "" {
+			slog.Error("OPENAI_API_KEY environment variable is required when AI_BACKEND=openai")
+			os.Exit(1)
+		}
+	} else {
+		slog.Error("Invalid AI_BACKEND configuration", "backend", cfg.AIBackend, "supported", "local, openai")
+		os.Exit(1)
 	}
 
-	// Create AI client (now uses local Ollama)
+	// Create AI client
 	aiClient, err := ai.NewClient(cfg, db)
 	if err != nil {
 		slog.Error("Failed to create AI client", "error", err)
 		os.Exit(1)
 	}
 
-	// Ensure model is downloaded and test the AI client
-	if cfg.OllamaAutoDownload {
-		if err := ensureModelAndTest(ctx, aiClient, cfg, db); err != nil {
-			slog.Error("Failed to ensure model and test AI client", "error", err)
-			os.Exit(1)
-		}
+	// Test the AI backend
+	if err := testAIBackend(ctx, aiClient, cfg, db); err != nil {
+		slog.Error("Failed to test AI backend", "error", err)
+		os.Exit(1)
 	}
 
 	apiServer := api.NewServer(":8081", db.DB)
@@ -129,8 +155,26 @@ func main() {
 	}
 }
 
-// ensureModelAndTest downloads the model if needed and tests the AI functionality
-func ensureModelAndTest(ctx context.Context, aiClient *ai.Client, cfg *config.Config, db *database.DB) error {
+// testAIBackend tests the AI backend and ensures it's ready
+func testAIBackend(ctx context.Context, aiClient *ai.Client, cfg *config.Config, db *database.DB) error {
+	switch cfg.AIBackend {
+	case "local":
+		return testOllamaBackend(ctx, aiClient, cfg, db)
+	case "openai":
+		return testOpenAIBackend(ctx, aiClient, cfg)
+	default:
+		return fmt.Errorf("unsupported AI backend: %s", cfg.AIBackend)
+	}
+}
+
+// testOllamaBackend tests the Ollama backend (existing logic)
+func testOllamaBackend(ctx context.Context, aiClient *ai.Client, cfg *config.Config, db *database.DB) error {
+	// Only proceed if auto-download is enabled
+	if !cfg.OllamaAutoDownload {
+		slog.Info("Ollama auto-download disabled, skipping model test")
+		return nil
+	}
+
 	// Get the backend client to access Ollama-specific methods
 	backend, ok := aiClient.GetBackend().(*ollama.Client)
 	if !ok {
@@ -157,7 +201,7 @@ func ensureModelAndTest(ctx context.Context, aiClient *ai.Client, cfg *config.Co
 	}
 
 	// Test with a simple prompt
-	slog.Info("Testing model with simple prompt...")
+	slog.Info("Testing Ollama backend with simple prompt...")
 	testMessages := []database.MessageForSummary{
 		{
 			UserName:    "Alice",
@@ -194,7 +238,7 @@ func ensureModelAndTest(ctx context.Context, aiClient *ai.Client, cfg *config.Co
 		return fmt.Errorf("test summarization failed: %w", err)
 	}
 
-	slog.Info("Model test successful", "summary", summary)
+	slog.Info("Ollama backend is ready", "summary", summary)
 
 	// Test with actual messages from database if available
 	groupIDs, err := db.GetGroups()
@@ -233,6 +277,66 @@ func ensureModelAndTest(ctx context.Context, aiClient *ai.Client, cfg *config.Co
 		}
 	} else {
 		slog.Info("No groups found for real message test")
+	}
+
+	return nil
+}
+
+// testOpenAIBackend tests the OpenAI backend
+func testOpenAIBackend(ctx context.Context, aiClient *ai.Client, cfg *config.Config) error {
+	slog.Info("Testing OpenAI backend connectivity...")
+
+	// Create a simple test message
+	testMessages := []database.MessageForSummary{
+		{
+			UserID:      1,
+			UserName:    "TestUser",
+			Text:        "Hello, are you there?",
+			MessageType: "regular",
+		},
+	}
+
+	// Use a context with reasonable timeout
+	testCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	summary, err := aiClient.Summarize(testCtx, testMessages)
+	if err != nil {
+		return fmt.Errorf("OpenAI backend test failed: %w", err)
+	}
+
+	if summary == "" {
+		return fmt.Errorf("OpenAI backend returned empty response")
+	}
+
+	slog.Info("OpenAI backend is ready", "model", cfg.OpenAIModel, "test_response_length", len(summary))
+	return nil
+}
+
+// validateConfig validates backend-specific configuration requirements
+func validateConfig(cfg *config.Config) error {
+	// Check required environment variables based on backend
+	switch cfg.AIBackend {
+	case "openai":
+		if cfg.OpenAIAPIKey == "" {
+			return fmt.Errorf("OPENAI_API_KEY is required when AI_BACKEND=openai")
+		}
+		if cfg.OpenAIModel == "" {
+			return fmt.Errorf("OPENAI_MODEL is required when AI_BACKEND=openai")
+		}
+		slog.Info("Using OpenAI backend", "model", cfg.OpenAIModel)
+	case "local":
+		if cfg.LocalModel == "" {
+			return fmt.Errorf("LOCAL_MODEL is required when AI_BACKEND=local")
+		}
+		slog.Info("Using Ollama backend", "model", cfg.LocalModel, "host", cfg.OllamaHost)
+	default:
+		return fmt.Errorf("unsupported AI_BACKEND: %s (supported: 'local', 'openai')", cfg.AIBackend)
+	}
+
+	// Check required general settings
+	if cfg.PhoneNumber == "" {
+		return fmt.Errorf("SIGNAL_PHONE_NUMBER is required")
 	}
 
 	return nil
