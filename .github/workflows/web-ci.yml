@@ -39,10 +39,16 @@ jobs:
       - name: Detect package manager
         id: pm
         run: |
-          if [ -f pnpm-lock.yaml ]; then echo "manager=pnpm" >> $GITHUB_OUTPUT; fi
-          if [ -f yarn.lock ]; then echo "manager=yarn" >> $GITHUB_OUTPUT; fi
-          if [ -f package-lock.json ]; then echo "manager=npm" >> $GITHUB_OUTPUT; fi
-          if [ -z "${{ steps.pm.outputs.manager }}" ]; then echo "manager=npm" >> $GITHUB_OUTPUT; fi
+          if [ -f pnpm-lock.yaml ]; then
+            manager=pnpm
+          elif [ -f yarn.lock ]; then
+            manager=yarn
+          elif [ -f package-lock.json ]; then
+            manager=npm
+          else
+            manager=npm
+          fi
+          echo "manager=$manager" >> $GITHUB_OUTPUT
 
       - name: Setup pnpm
         if: steps.pm.outputs.manager == 'pnpm'
