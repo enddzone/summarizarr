@@ -1,0 +1,57 @@
+version: 2
+updates:
+  # Go modules (backend)
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(gomod)"
+      include: "scope"
+
+  # npm (frontend - Next.js app)
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(npm)"
+      include: "scope"
+    groups:
+      nextjs-minor-patch:
+        patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+        update-types:
+          - minor
+          - patch
+      eslint-minor-patch:
+        patterns:
+          - "eslint*"
+          - "@typescript-eslint/*"
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions (CI)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(actions)"
+      include: "scope"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore(docker)"
+      include: "scope"

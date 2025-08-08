@@ -1,0 +1,87 @@
+name: Web CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'web/**'
+      - '.github/workflows/web-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: |
+            web/package-lock.json
+            web/pnpm-lock.yaml
+            web/yarn.lock
+
+      - name: Detect package manager
+        id: pm
+        run: |
+          if [ -f pnpm-lock.yaml ]; then echo "manager=pnpm" >> $GITHUB_OUTPUT; fi
+          if [ -f yarn.lock ]; then echo "manager=yarn" >> $GITHUB_OUTPUT; fi
+          if [ -f package-lock.json ]; then echo "manager=npm" >> $GITHUB_OUTPUT; fi
+          if [ -z "${{ steps.pm.outputs.manager }}" ]; then echo "manager=npm" >> $GITHUB_OUTPUT; fi
+
+      - name: Setup pnpm
+        if: steps.pm.outputs.manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ steps.pm.outputs.manager }}" = "pnpm" ]; then pnpm install --frozen-lockfile; fi
+          if [ "${{ steps.pm.outputs.manager }}" = "yarn" ]; then yarn install --frozen-lockfile; fi
+          if [ "${{ steps.pm.outputs.manager }}" = "npm" ]; then npm ci; fi
+
+      - name: Lint
+        run: |
+          if [ -f package.json ] && jq -re '.scripts.lint? // empty' package.json >/dev/null 2>&1; then \
+            if [ "${{ steps.pm.outputs.manager }}" = "pnpm" ]; then pnpm run lint; fi; \
+            if [ "${{ steps.pm.outputs.manager }}" = "yarn" ]; then yarn lint; fi; \
+            if [ "${{ steps.pm.outputs.manager }}" = "npm" ]; then npm run lint; fi; \
+          else \
+            echo 'No lint script; skipping.'; \
+          fi
+
+      - name: Test
+        run: |
+          if [ -f package.json ] && jq -re '.scripts.test? // empty' package.json >/dev/null 2>&1; then \
+            if [ "${{ steps.pm.outputs.manager }}" = "pnpm" ]; then pnpm test -- --ci; fi; \
+            if [ "${{ steps.pm.outputs.manager }}" = "yarn" ]; then yarn test --ci; fi; \
+            if [ "${{ steps.pm.outputs.manager }}" = "npm" ]; then npm test -- --ci; fi; \
+          else \
+            echo 'No test script; skipping.'; \
+          fi
+
+      - name: Build
+        run: |
+          if [ -f package.json ] && jq -re '.scripts.build? // empty' package.json >/dev/null 2>&1; then \
+            if [ "${{ steps.pm.outputs.manager }}" = "pnpm" ]; then pnpm run build; fi; \
+            if [ "${{ steps.pm.outputs.manager }}" = "yarn" ]; then yarn build; fi; \
+            if [ "${{ steps.pm.outputs.manager }}" = "npm" ]; then npm run build; fi; \
+          else \
+            echo 'No build script; skipping.'; \
+          fi
