@@ -229,7 +229,9 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	// Wait for server to be ready
 	if err := m.waitForReady(ctx); err != nil {
-		m.Stop()
+		if stopErr := m.Stop(); stopErr != nil {
+			slog.Error("Failed to stop ollama after startup failure", "error", stopErr)
+		}
 		return fmt.Errorf("ollama server failed to start: %w", err)
 	}
 
@@ -280,7 +282,9 @@ func (m *Manager) Stop() error {
 
 	// Try graceful shutdown first
 	if m.process.Process != nil {
-		m.process.Process.Signal(os.Interrupt)
+		if err := m.process.Process.Signal(os.Interrupt); err != nil {
+			slog.Error("Failed to send interrupt signal", "error", err)
+		}
 
 		// Wait for graceful shutdown
 		done := make(chan error, 1)
@@ -291,7 +295,9 @@ func (m *Manager) Stop() error {
 		select {
 		case <-time.After(5 * time.Second):
 			// Force kill if graceful shutdown takes too long
-			m.process.Process.Kill()
+			if err := m.process.Process.Kill(); err != nil {
+				slog.Error("Failed to kill ollama process", "error", err)
+			}
 			<-done
 		case <-done:
 			// Graceful shutdown completed

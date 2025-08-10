@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    turbo: {},
-  },
   output: 'standalone',
+  turbopack: {},
   images: {
     remotePatterns: [
       {
@@ -24,4 +22,4 @@ const nextConfig = {
   },
 }
 
-module.exports = nextConfig
+export default nextConfig
