@@ -10,6 +10,7 @@ import (
 type Config struct {
 	LogLevel              slog.Level
 	PhoneNumber           string
+	SignalURL             string
 	DatabasePath          string
 	AIBackend             string
 	LocalModel            string
@@ -64,6 +65,11 @@ func New() *Config {
 		summarizationInterval = "12h" // default
 	}
 
+	signalURL := os.Getenv("SIGNAL_URL")
+	if signalURL == "" {
+		signalURL = "signal-cli-rest-api:8080" // default for Docker
+	}
+
 	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
 	openaiModel := os.Getenv("OPENAI_MODEL")
 	if openaiModel == "" {
@@ -73,6 +79,7 @@ func New() *Config {
 	return &Config{
 		LogLevel:              parseLogLevel(os.Getenv("LOG_LEVEL")),
 		PhoneNumber:           os.Getenv("SIGNAL_PHONE_NUMBER"),
+		SignalURL:             signalURL,
 		DatabasePath:          databasePath,
 		AIBackend:             aiBackend,
 		LocalModel:            localModel,

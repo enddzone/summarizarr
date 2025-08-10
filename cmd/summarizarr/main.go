@@ -128,8 +128,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Use phone number from config
-	client := signalclient.NewClient("signal-cli-rest-api:8080", cfg.PhoneNumber, db)
+	// Use phone number and Signal URL from config
+	client := signalclient.NewClient(cfg.SignalURL, cfg.PhoneNumber, db)
 
 	go func() {
 		if err := client.Listen(ctx); err != nil {
