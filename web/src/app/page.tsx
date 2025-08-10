@@ -7,6 +7,7 @@ export default function Home() {
     <main className="min-h-screen bg-background">
       <Suspense fallback={<LoadingSpinner />}>
         <SummaryDashboard />
+        <SummaryDashboard />
       </Suspense>
     </main>
   )
