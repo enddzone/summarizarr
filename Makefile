@@ -92,4 +92,63 @@ test-backend: ## Test Go backend
 test-frontend: ## Test Next.js frontend
 	cd web && npm test
 
-.PHONY: help signal backend frontend all docker status stop clean logs logs-signal dev-setup test-backend test-frontend
+# Claude Code hooks integration
+lint: ## Lint code (supports FILE= for specific files)
+	@if [ -n "$(FILE)" ]; then \
+		echo "Linting specific file: $(FILE)" >&2; \
+		case "$(FILE)" in \
+			*.go) \
+				if command -v golangci-lint >/dev/null 2>&1; then \
+					golangci-lint run $(FILE); \
+				else \
+					gofmt -w $(FILE) && go vet $(FILE); \
+				fi \
+				;; \
+			web/*.ts|web/*.tsx|web/*.js|web/*.jsx) \
+				cd web && npm run lint -- --fix $(patsubst web/%,%,$(FILE)) 2>/dev/null || npm run lint; \
+				;; \
+			*.ts|*.tsx|*.js|*.jsx) \
+				cd web && npm run lint -- --fix ../$(FILE) 2>/dev/null || npm run lint; \
+				;; \
+			*) \
+				echo "No linter configured for $(FILE)" >&2; \
+				;; \
+		esac \
+	else \
+		echo "Linting all files" >&2; \
+		if command -v golangci-lint >/dev/null 2>&1; then \
+			golangci-lint run ./...; \
+		else \
+			gofmt -w . && go vet ./...; \
+		fi; \
+		cd web && npm run lint; \
+	fi
+
+test: ## Run tests (supports FILE= for specific files)
+	@if [ -n "$(FILE)" ]; then \
+		echo "Testing specific file: $(FILE)" >&2; \
+		case "$(FILE)" in \
+			*.go) \
+				go test -v -race $(dir $(FILE)); \
+				;; \
+			web/*.test.ts|web/*.test.tsx|web/*.test.js|web/*.test.jsx|web/*.spec.ts|web/*.spec.tsx|web/*.spec.js|web/*.spec.jsx) \
+				cd web && npm test -- $(patsubst web/%,%,$(FILE)); \
+				;; \
+			*.test.ts|*.test.tsx|*.test.js|*.test.jsx|*.spec.ts|*.spec.tsx|*.spec.js|*.spec.jsx) \
+				cd web && npm test -- ../$(FILE); \
+				;; \
+			web/*) \
+				cd web && npm test; \
+				;; \
+			*) \
+				go test -v -race ./...; \
+				cd web && npm test; \
+				;; \
+		esac \
+	else \
+		echo "Running all tests" >&2; \
+		go test -v -race ./...; \
+		cd web && npm test; \
+	fi
+
+.PHONY: help signal backend frontend all docker status stop clean logs logs-signal dev-setup test-backend test-frontend lint test

@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -152,7 +153,11 @@ func (db *DB) SaveMessage(msg *signal.Envelope) error {
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			slog.Error("Failed to rollback transaction", "error", err)
+		}
+	}()
 
 	userID, err := db.findOrCreateUser(tx, msg.SourceUUID, msg.SourceNumber, msg.SourceName)
 	if err != nil {

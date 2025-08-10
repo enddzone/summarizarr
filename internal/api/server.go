@@ -62,7 +62,9 @@ func (s *Server) handleDeleteSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"ok":true}`))
+	if _, err := w.Write([]byte(`{"ok":true}`)); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to write response", "error", err)
+	}
 }
 
 // Start starts the API server.
@@ -218,7 +220,10 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", "attachment; filename=summaries.csv")
-		w.Write([]byte("ID,Group ID,Summary,Start,End,Created At\n"))
+		if _, err := w.Write([]byte("ID,Group ID,Summary,Start,End,Created At\n")); err != nil {
+			slog.ErrorContext(r.Context(), "Failed to write CSV header", "error", err)
+			return
+		}
 		for _, summary := range summaries {
 			fmt.Fprintf(w, "%d,%d,\"%s\",%d,%d,%s\n",
 				summary.ID, summary.GroupID, summary.Text, summary.Start, summary.End, summary.CreatedAt)
