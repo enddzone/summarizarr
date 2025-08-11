@@ -69,7 +69,6 @@ clean: stop ## Remove build artifacts and stop containers
 	rm -rf web/.next
 	rm -f summarizarr
 	rm -f summarizarr.db
-	rm -f data/summarizarr.db
 	docker compose down --volumes --remove-orphans
 	@echo "$(GREEN)Cleanup complete$(NC)"
 
