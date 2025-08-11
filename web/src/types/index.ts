@@ -1,7 +1,7 @@
 export interface Summary {
   id: number
   group_id: number
-  group_name: string
+  group_name: string | null
   text: string
   start: string
   end: string

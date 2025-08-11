@@ -14,3 +14,5 @@ web/.env
 web/.DS_Store
 web/.eslintcache
 web/.vscode
+plan.md
+web/coverage

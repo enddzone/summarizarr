@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import ReactMarkdown from 'react-markdown'
 import { cleanSummaryText } from '@/lib/summary-utils'
 import type { Summary } from '@/types'
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,106 @@ interface SummaryCardsProps {
   onDelete?: (id: number) => Promise<void> | void
 }
 
+// Custom hook for overflow detection with ResizeObserver
+function useOverflowDetection(dependency?: string) {
+  const [isOverflowing, setIsOverflowing] = useState(false)
+  const elementRef = useRef<HTMLDivElement>(null)
+  
+  const checkOverflow = useCallback(() => {
+    if (elementRef.current) {
+      // Use requestAnimationFrame to ensure measurement happens after CSS is applied
+      requestAnimationFrame(() => {
+        if (elementRef.current) {
+          setIsOverflowing(elementRef.current.scrollHeight > elementRef.current.clientHeight)
+        }
+      })
+    }
+  }, [])
+  
+  useEffect(() => {
+    const element = elementRef.current
+    if (!element) return
+    
+    // ResizeObserver for dynamic content changes
+    let resizeObserver: ResizeObserver | null = null
+    
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(checkOverflow)
+      resizeObserver.observe(element)
+    } else {
+      // Fallback for browsers without ResizeObserver support
+      console.warn('ResizeObserver not supported, using fallback')
+    }
+    
+    // Initial check after a brief delay to catch initial render
+    const timeoutId = setTimeout(checkOverflow, 100)
+    
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect()
+      }
+      clearTimeout(timeoutId)
+    }
+  }, [dependency, checkOverflow])
+  
+  return { isOverflowing, elementRef }
+}
+
+// Shared header component factory to eliminate duplication
+const createHeaderComponent = (
+  level: 'h1' | 'h2' | 'h3',
+  containerClass: string,
+  textClass: string,
+  isFirst = false
+) => {
+  const Component = (props: { children?: React.ReactNode }) => (
+    <div className={`${containerClass} ${isFirst ? 'first:border-t-0 first:pt-0 first:mt-0' : ''}`}>
+      <h3 className={textClass}>{props.children}</h3>
+    </div>
+  )
+  Component.displayName = `HeaderComponent${level.toUpperCase()}`
+  return Component
+}
+
+// Shared markdown component configurations
+const createMarkdownComponents = (variant: 'card' | 'dialog') => {
+  const isCard = variant === 'card'
+  
+  return {
+    p: (props: { children?: React.ReactNode }) => (
+      <p className={isCard ? 'text-sm leading-relaxed line-clamp-4 mb-2' : 'text-sm leading-relaxed mb-3'}>
+        {props.children}
+      </p>
+    ),
+    ul: (props: { children?: React.ReactNode }) => (
+      <ul className={isCard ? 'text-sm space-y-1 mb-3 pl-4' : 'text-sm space-y-2 mb-4 pl-4'}>
+        {props.children}
+      </ul>
+    ),
+    li: (props: { children?: React.ReactNode }) => (
+      <li className="text-sm leading-relaxed text-muted-foreground">{props.children}</li>
+    ),
+    h1: createHeaderComponent(
+      'h1',
+      isCard ? 'border-t border-border pt-2 mt-2' : 'border-t border-border pt-3 mt-4',
+      isCard ? 'text-sm font-semibold mb-1 text-foreground' : 'text-base font-semibold mb-2 text-foreground',
+      !isCard
+    ),
+    h2: createHeaderComponent(
+      'h2',
+      isCard ? 'border-t border-border pt-2 mt-2' : 'border-t border-border pt-3 mt-4',
+      isCard ? 'text-sm font-semibold mb-1 text-foreground' : 'text-base font-semibold mb-2 text-foreground',
+      !isCard
+    ),
+    h3: createHeaderComponent(
+      'h3',
+      isCard ? 'border-t border-border pt-2 mt-2' : 'border-t border-border pt-3 mt-4',
+      isCard ? 'text-sm font-semibold mb-1 text-foreground' : 'text-base font-semibold mb-2 text-foreground',
+      !isCard
+    ),
+  }
+}
+
 export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
   // Stable color palette (Flat UI inspired) to differentiate groups
   const palette = [
@@ -52,42 +152,21 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
 
   // Individual card overflow detection
   const CardWithOverflowDetection = ({ summary, groupColor, onDelete }: { summary: Summary, groupColor: string, onDelete?: (id: number) => void | Promise<void> }) => {
-    const contentRef = useRef<HTMLDivElement>(null)
-    const [showMore, setShowMore] = useState(false)
+    const { isOverflowing: showMore, elementRef: contentRef } = useOverflowDetection(summary.text)
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-
-    useEffect(() => {
-      if (contentRef.current) {
-        const element = contentRef.current
-        
-        // Use ResizeObserver to detect when content size changes
-        const resizeObserver = new ResizeObserver(() => {
-          // Use requestAnimationFrame to ensure measurement happens after CSS is applied
-          requestAnimationFrame(() => {
-            setShowMore(element.scrollHeight > element.clientHeight)
-          })
-        })
-        
-        resizeObserver.observe(element)
-        
-        // Also check immediately after a short delay to catch initial render
-        const timeoutId = setTimeout(() => {
-          requestAnimationFrame(() => {
-            setShowMore(element.scrollHeight > element.clientHeight)
-          })
-        }, 100)
-        
-        return () => {
-          resizeObserver.disconnect()
-          clearTimeout(timeoutId)
-        }
-      }
-    }, [summary.text])
 
     const handleDeleteClick = (e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
       setDeleteDialogOpen(true)
+    }
+
+    const handleDeleteKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        e.stopPropagation()
+        setDeleteDialogOpen(true)
+      }
     }
 
     const handleDeleteConfirm = async () => {
@@ -109,15 +188,18 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
         <DialogTrigger asChild>
           <Card
             role="button"
-            className="relative min-w-[18rem] h-full max-h-[260px] overflow-hidden flex flex-col transition-all duration-200 hover:scale-[1.01] hover:shadow-[0_10px_44px_rgba(52,152,219,0.25)] hover:ring-2 hover:ring-primary/50 hover:ring-offset-2 hover:ring-offset-background cursor-pointer"
+            tabIndex={0}
+            aria-label={`Open summary for ${summary.group_name || `Group ${summary.group_id}`} from ${formatDistanceToNow(new Date(summary.created_at), { addSuffix: true })}`}
+            className="relative min-w-[18rem] h-full max-h-[260px] overflow-hidden flex flex-col transition-all duration-200 hover:scale-[1.01] hover:shadow-[0_10px_44px_rgba(52,152,219,0.25)] hover:ring-2 hover:ring-primary/50 hover:ring-offset-2 hover:ring-offset-background cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
           >
             {onDelete && (
               <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <AlertDialogTrigger asChild>
                   <button
-                    className="absolute right-2 top-2 z-10 rounded-full p-1.5 text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                    aria-label="Delete summary"
+                    className="absolute right-2 top-2 z-10 rounded-full p-1.5 text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 focus:outline-none focus:ring-2 focus:ring-destructive focus:ring-offset-1 transition-colors"
+                    aria-label={`Delete summary for ${summary.group_name || `Group ${summary.group_id}`}`}
                     onClick={handleDeleteClick}
+                    onKeyDown={handleDeleteKeyDown}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                   </button>
@@ -155,34 +237,7 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
             </CardHeader>
             <CardContent className="pt-0 flex-1 relative">
               <div ref={contentRef} className="prose prose-sm max-w-none dark:prose-invert overflow-hidden">
-                <ReactMarkdown
-                  components={{
-                    p: ({ children }) => (
-                      <p className="text-sm leading-relaxed line-clamp-4 mb-2">{children}</p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="text-sm space-y-1 mb-3 pl-4">{children}</ul>
-                    ),
-                    li: ({ children }) => (
-                      <li className="text-sm leading-relaxed text-muted-foreground">{children}</li>
-                    ),
-                    h1: ({ children }) => (
-                      <div className="border-t border-border pt-2 mt-2">
-                        <h3 className="text-sm font-semibold mb-1 text-foreground">{children}</h3>
-                      </div>
-                    ),
-                    h2: ({ children }) => (
-                      <div className="border-t border-border pt-2 mt-2">
-                        <h3 className="text-sm font-semibold mb-1 text-foreground">{children}</h3>
-                      </div>
-                    ),
-                    h3: ({ children }) => (
-                      <div className="border-t border-border pt-2 mt-2">
-                        <h3 className="text-sm font-semibold mb-1 text-foreground">{children}</h3>
-                      </div>
-                    ),
-                  }}
-                >
+                <ReactMarkdown components={createMarkdownComponents('card')}>
                   {text}
                 </ReactMarkdown>
               </div>
@@ -190,7 +245,7 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
               {showMore && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background via-background/90 to-transparent flex items-end justify-center pb-2">
                   <div className="bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded-full text-xs font-medium shadow-sm">
-                    Click to read more...
+                    Press Enter or click to read more...
                   </div>
                 </div>
               )}
@@ -212,34 +267,7 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
           </DialogHeader>
           <div className="px-6 pb-6">
             <div className="prose max-w-none dark:prose-invert">
-              <ReactMarkdown
-                components={{
-                  p: ({ children }) => (
-                    <p className="text-sm leading-relaxed mb-3">{children}</p>
-                  ),
-                  ul: ({ children }) => (
-                    <ul className="text-sm space-y-2 mb-4 pl-4">{children}</ul>
-                  ),
-                  li: ({ children }) => (
-                    <li className="text-sm leading-relaxed text-muted-foreground">{children}</li>
-                  ),
-                  h1: ({ children }) => (
-                    <div className="border-t border-border pt-3 mt-4 first:border-t-0 first:pt-0 first:mt-0">
-                      <h3 className="text-base font-semibold mb-2 text-foreground">{children}</h3>
-                    </div>
-                  ),
-                  h2: ({ children }) => (
-                    <div className="border-t border-border pt-3 mt-4 first:border-t-0 first:pt-0 first:mt-0">
-                      <h3 className="text-base font-semibold mb-2 text-foreground">{children}</h3>
-                    </div>
-                  ),
-                  h3: ({ children }) => (
-                    <div className="border-t border-border pt-3 mt-4 first:border-t-0 first:pt-0 first:mt-0">
-                      <h3 className="text-base font-semibold mb-2 text-foreground">{children}</h3>
-                    </div>
-                  ),
-                }}
-              >
+              <ReactMarkdown components={createMarkdownComponents('dialog')}>
                 {text}
               </ReactMarkdown>
             </div>
