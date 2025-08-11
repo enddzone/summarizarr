@@ -41,6 +41,7 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 make dev-setup
 
 # Start all services locally
+# This is a blocking command, always run in the background
 make all          # Signal container + Go backend + Next.js frontend
 
 # Individual services  

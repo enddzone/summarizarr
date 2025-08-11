@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"summarizarr/internal/config"
 	"summarizarr/internal/database"
@@ -11,11 +12,21 @@ import (
 )
 
 // SummarizationPrompt is the template used for all LLM backends
-const SummarizationPrompt = `Please provide a concise summary of this Signal group conversation. Focus on:
-- Key topics discussed
-- Important decisions or conclusions
-- Action items or next steps
-- Notable reactions or responses
+const SummarizationPrompt = `Please provide a concise summary of this Signal group conversation using the following exact markdown format:
+
+## Key topics discussed
+- [List each main topic as a bullet point]
+
+## Important decisions or conclusions
+- [List each decision or conclusion as a bullet point]
+
+## Action items or next steps
+- [List each action item as a bullet point]
+
+## Notable reactions or responses
+- [List notable reactions as bullet points]
+
+IMPORTANT: Use exactly the header format shown above (## Header name). Each section should be a proper markdown header followed by bullet points.
 
 Conversation format: Regular messages, quoted replies (shown as 'replying to: "original text"'), and emoji reactions.
 
@@ -53,6 +64,46 @@ func FormatMessagesForLLM(messages []database.MessageForSummary) string {
 	return content.String()
 }
 
+// SanitizeSummaryFormat ensures consistent markdown formatting for summaries
+func SanitizeSummaryFormat(summary string) string {
+	// Expected section headers in order
+	expectedHeaders := []string{
+		"Key topics discussed",
+		"Important decisions or conclusions", 
+		"Action items or next steps",
+		"Notable reactions or responses",
+	}
+	
+	// Normalize various header formats to consistent ## format
+	for _, header := range expectedHeaders {
+		// Match variations like "**Key topics discussed**", "Key topics discussed:", etc.
+		patterns := []string{
+			fmt.Sprintf(`(?i)\*\*%s\*\*:?`, regexp.QuoteMeta(header)),
+			fmt.Sprintf(`(?i)%s:`, regexp.QuoteMeta(header)),
+			fmt.Sprintf(`(?i)#{1,4}\s*%s`, regexp.QuoteMeta(header)),
+		}
+		
+		for _, pattern := range patterns {
+			re := regexp.MustCompile(pattern)
+			summary = re.ReplaceAllString(summary, fmt.Sprintf("## %s", header))
+		}
+	}
+	
+	// Fix nested lists - convert "- Topic:\n  - Detail" to proper format
+	nestedListRe := regexp.MustCompile(`(?m)^(\s*)- ([^:]+):\s*\n(\s+)- (.+)$`)
+	summary = nestedListRe.ReplaceAllString(summary, "- $2: $4")
+	
+	// Ensure proper spacing between sections
+	headerRe := regexp.MustCompile(`(?m)^## (.+)$`)
+	summary = headerRe.ReplaceAllString(summary, "\n## $1\n")
+	
+	// Clean up extra newlines
+	summary = regexp.MustCompile(`\n{3,}`).ReplaceAllString(summary, "\n\n")
+	summary = strings.TrimSpace(summary)
+	
+	return summary
+}
+
 // Client wraps an AI backend client.
 type Client struct {
 	backend AIClient
@@ -87,6 +138,9 @@ func (c *Client) Summarize(ctx context.Context, messages []database.MessageForSu
 	if err != nil {
 		return "", err
 	}
+
+	// Sanitize format for consistency
+	summary = SanitizeSummaryFormat(summary)
 
 	// Post-process: substitute user IDs with real names
 	return c.substituteUserNames(summary, messages)

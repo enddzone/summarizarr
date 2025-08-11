@@ -158,7 +158,28 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
                 <ReactMarkdown
                   components={{
                     p: ({ children }) => (
-                      <p className="text-sm leading-relaxed line-clamp-4">{children}</p>
+                      <p className="text-sm leading-relaxed line-clamp-4 mb-2">{children}</p>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="text-sm space-y-1 mb-3 pl-4">{children}</ul>
+                    ),
+                    li: ({ children }) => (
+                      <li className="text-sm leading-relaxed text-muted-foreground">{children}</li>
+                    ),
+                    h1: ({ children }) => (
+                      <div className="border-t border-border pt-2 mt-2">
+                        <h3 className="text-sm font-semibold mb-1 text-foreground">{children}</h3>
+                      </div>
+                    ),
+                    h2: ({ children }) => (
+                      <div className="border-t border-border pt-2 mt-2">
+                        <h3 className="text-sm font-semibold mb-1 text-foreground">{children}</h3>
+                      </div>
+                    ),
+                    h3: ({ children }) => (
+                      <div className="border-t border-border pt-2 mt-2">
+                        <h3 className="text-sm font-semibold mb-1 text-foreground">{children}</h3>
+                      </div>
                     ),
                   }}
                 >
@@ -191,7 +212,36 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
           </DialogHeader>
           <div className="px-6 pb-6">
             <div className="prose max-w-none dark:prose-invert">
-              <ReactMarkdown>{text}</ReactMarkdown>
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => (
+                    <p className="text-sm leading-relaxed mb-3">{children}</p>
+                  ),
+                  ul: ({ children }) => (
+                    <ul className="text-sm space-y-2 mb-4 pl-4">{children}</ul>
+                  ),
+                  li: ({ children }) => (
+                    <li className="text-sm leading-relaxed text-muted-foreground">{children}</li>
+                  ),
+                  h1: ({ children }) => (
+                    <div className="border-t border-border pt-3 mt-4 first:border-t-0 first:pt-0 first:mt-0">
+                      <h3 className="text-base font-semibold mb-2 text-foreground">{children}</h3>
+                    </div>
+                  ),
+                  h2: ({ children }) => (
+                    <div className="border-t border-border pt-3 mt-4 first:border-t-0 first:pt-0 first:mt-0">
+                      <h3 className="text-base font-semibold mb-2 text-foreground">{children}</h3>
+                    </div>
+                  ),
+                  h3: ({ children }) => (
+                    <div className="border-t border-border pt-3 mt-4 first:border-t-0 first:pt-0 first:mt-0">
+                      <h3 className="text-base font-semibold mb-2 text-foreground">{children}</h3>
+                    </div>
+                  ),
+                }}
+              >
+                {text}
+              </ReactMarkdown>
             </div>
           </div>
         </DialogContent>
