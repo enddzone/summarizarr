@@ -24,7 +24,7 @@ jobs:
         working-directory: web
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Use Node.js 20 (npm)
         if: steps.pm.outputs.manager == 'npm'
