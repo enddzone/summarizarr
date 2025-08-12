@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { Moon, Sun, LayoutGrid, List, ArrowUpDown, Download, Settings } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Button } from '@/components/ui/button'
@@ -37,7 +38,19 @@ export function Header({
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4 flex h-16 items-center justify-between">
         <div className="flex items-center space-x-4">
-          <h1 className="text-2xl font-bold text-primary">Summarizarr</h1>
+          <div className="flex items-center">
+            <Image
+              src="/logotiny.png"
+              alt="Summarizarr Logo"
+              width={64}
+              height={64}
+              className="w-14 h-14"
+            />
+            <h1 className="text-2xl font-bold tracking-tight">
+              <span className="text-primary">SUMMARI</span>
+              <span className="text-orange-600">ZARR</span>
+            </h1>
+          </div>
           <Badge variant={signalConfig.isRegistered ? "default" : "secondary"} className="flex items-center gap-1.5">
             {signalConfig.isRegistered && (
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
