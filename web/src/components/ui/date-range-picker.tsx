@@ -70,7 +70,7 @@ export function DatePickerWithRange({ value, onChange, className, activePreset: 
   }
 
   return (
-  <div className={cn("grid gap-2", className)}>
+    <div className={cn("grid gap-2", className)}>
       <Popover>
         <PopoverTrigger asChild>
           <Button
@@ -102,15 +102,17 @@ export function DatePickerWithRange({ value, onChange, className, activePreset: 
               <Button variant={activePreset === 'all-time' ? 'default' : 'secondary'} size="sm" onClick={() => {
                 const end = new Date();
                 const start = new Date(0); // Unix epoch start
-                setDate({ from: start, to: end });
-                // Don't call onChange here, just updateActivePreset which will handle both
+                const newRange = { from: start, to: end };
+                setDate(newRange);
+                onChange({ start, end });
                 updateActivePreset('all-time')
               }}>All time</Button>
               <Button variant={activePreset === 'today' ? 'default' : 'secondary'} size="sm" onClick={() => {
                 const now = new Date();
                 const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                setDate({ from: start, to: now });
-                // Don't call onChange here, just updateActivePreset which will handle both
+                const newRange = { from: start, to: now };
+                setDate(newRange);
+                onChange({ start, end: now });
                 updateActivePreset('today')
               }}>Today</Button>
               <Button variant={activePreset === 'yesterday' ? 'default' : 'secondary'} size="sm" onClick={() => {
@@ -119,30 +121,34 @@ export function DatePickerWithRange({ value, onChange, className, activePreset: 
                 y.setDate(now.getDate() - 1);
                 const start = new Date(y.getFullYear(), y.getMonth(), y.getDate());
                 const end = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999);
-                setDate({ from: start, to: end });
-                // Don't call onChange here, just updateActivePreset which will handle both
+                const newRange = { from: start, to: end };
+                setDate(newRange);
+                onChange({ start, end });
                 updateActivePreset('yesterday')
               }}>Yesterday</Button>
               <Button variant={activePreset === 'morning' ? 'default' : 'secondary'} size="sm" onClick={() => {
                 const now = new Date();
                 const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 6, 0, 0);
                 const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
-                setDate({ from: start, to: end });
-                // Don't call onChange here, just updateActivePreset which will handle both
+                const newRange = { from: start, to: end };
+                setDate(newRange);
+                onChange({ start, end });
                 updateActivePreset('morning')
               }}>Morning</Button>
               <Button variant={activePreset === '6h' ? 'default' : 'secondary'} size="sm" onClick={() => {
                 const end = new Date();
                 const start = new Date(end.getTime() - 6 * 60 * 60 * 1000);
-                setDate({ from: start, to: end });
-                // Don't call onChange here, just updateActivePreset which will handle both
+                const newRange = { from: start, to: end };
+                setDate(newRange);
+                onChange({ start, end });
                 updateActivePreset('6h')
               }}>Last 6h</Button>
               <Button variant={activePreset === '12h' ? 'default' : 'secondary'} size="sm" onClick={() => {
                 const end = new Date();
                 const start = new Date(end.getTime() - 12 * 60 * 60 * 1000);
-                setDate({ from: start, to: end });
-                // Don't call onChange here, just updateActivePreset which will handle both
+                const newRange = { from: start, to: end };
+                setDate(newRange);
+                onChange({ start, end });
                 updateActivePreset('12h')
               }}>Last 12h</Button>
             </div>

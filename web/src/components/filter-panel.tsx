@@ -37,7 +37,7 @@ export function FilterPanel({ filters, onFiltersChange, groups }: FilterPanelPro
     const updatedGroups = checked
       ? [...filters.groups, groupId]
       : filters.groups.filter(id => id !== groupId)
-    
+
     console.log('Group toggled:', { groupId, checked, updatedGroups })
     onFiltersChange({
       ...filters,
@@ -82,9 +82,9 @@ export function FilterPanel({ filters, onFiltersChange, groups }: FilterPanelPro
 
   const handlePresetChange = (preset: 'all-time' | 'today' | 'yesterday' | 'morning' | '6h' | '12h' | undefined) => {
     console.log('Preset changed:', preset)
-    
+
     let newTimeRange = filters.timeRange;
-    
+
     // Calculate the time range for the preset
     if (preset) {
       switch (preset) {
@@ -93,9 +93,9 @@ export function FilterPanel({ filters, onFiltersChange, groups }: FilterPanelPro
           break;
         case 'today': {
           const now = new Date();
-          newTimeRange = { 
-            start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), 
-            end: now 
+          newTimeRange = {
+            start: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+            end: now
           };
           break;
         }
@@ -103,39 +103,39 @@ export function FilterPanel({ filters, onFiltersChange, groups }: FilterPanelPro
           const now = new Date();
           const y = new Date(now);
           y.setDate(now.getDate() - 1);
-          newTimeRange = { 
-            start: new Date(y.getFullYear(), y.getMonth(), y.getDate()), 
-            end: new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999) 
+          newTimeRange = {
+            start: new Date(y.getFullYear(), y.getMonth(), y.getDate()),
+            end: new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999)
           };
           break;
         }
         case 'morning': {
           const now = new Date();
-          newTimeRange = { 
-            start: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 6, 0, 0), 
-            end: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0) 
+          newTimeRange = {
+            start: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 6, 0, 0),
+            end: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0)
           };
           break;
         }
         case '6h': {
           const end = new Date();
-          newTimeRange = { 
-            start: new Date(end.getTime() - 6 * 60 * 60 * 1000), 
-            end 
+          newTimeRange = {
+            start: new Date(end.getTime() - 6 * 60 * 60 * 1000),
+            end
           };
           break;
         }
         case '12h': {
           const end = new Date();
-          newTimeRange = { 
-            start: new Date(end.getTime() - 12 * 60 * 60 * 1000), 
-            end 
+          newTimeRange = {
+            start: new Date(end.getTime() - 12 * 60 * 60 * 1000),
+            end
           };
           break;
         }
       }
     }
-    
+
     onFiltersChange({
       ...filters,
       timeRange: newTimeRange,
@@ -144,14 +144,16 @@ export function FilterPanel({ filters, onFiltersChange, groups }: FilterPanelPro
   }
 
   const clearAllFilters = () => {
+    // Default to "Today" instead of "All time"
+    const now = new Date();
     onFiltersChange({
       groups: [],
       timeRange: {
-        start: new Date(0), // All time (Unix epoch)
-        end: new Date(),
+        start: new Date(now.getFullYear(), now.getMonth(), now.getDate()), // Start of today
+        end: now, // Current time
       },
       searchQuery: '',
-      activePreset: 'all-time',
+      activePreset: 'today',
     })
   }
 
@@ -161,8 +163,8 @@ export function FilterPanel({ filters, onFiltersChange, groups }: FilterPanelPro
   return (
     <Card>
       <CardContent className="p-4">
-  {/* Top Row - Search and Quick Actions */}
-  <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3 mb-3">
+        {/* Top Row - Search and Quick Actions */}
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3 mb-3">
           <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -172,7 +174,7 @@ export function FilterPanel({ filters, onFiltersChange, groups }: FilterPanelPro
               className="pl-10"
             />
           </div>
-          
+
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full lg:w-auto">
             <div className="flex items-center gap-2 flex-wrap">
               <DatePickerWithRange
@@ -183,10 +185,10 @@ export function FilterPanel({ filters, onFiltersChange, groups }: FilterPanelPro
               />
               {filters.activePreset && (
                 <Badge variant="secondary" className="gap-1 whitespace-nowrap">
-                  {filters.activePreset === '6h' ? 'Last 6h' : 
-                   filters.activePreset === '12h' ? 'Last 12h' : 
-                   filters.activePreset === 'morning' ? 'Morning' :
-                   filters.activePreset.charAt(0).toUpperCase() + filters.activePreset.slice(1)}
+                  {filters.activePreset === '6h' ? 'Last 6h' :
+                    filters.activePreset === '12h' ? 'Last 12h' :
+                      filters.activePreset === 'morning' ? 'Morning' :
+                        filters.activePreset.charAt(0).toUpperCase() + filters.activePreset.slice(1)}
                   <button
                     onClick={() => handlePresetChange(undefined)}
                     className="ml-1 hover:bg-muted rounded-full p-0.5 transition-colors"
