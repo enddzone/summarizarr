@@ -40,11 +40,11 @@ export function Header({
         <div className="flex items-center space-x-4">
           <div className="flex items-center">
             <Image
-              src="/logotiny.png"
+              src="/main.png"
               alt="Summarizarr Logo"
-              width={64}
-              height={64}
-              className="w-14 h-14"
+              width={96}
+              height={96}
+              className="w-28 h-28 object-contain mt-4 -mr-6"
             />
             <h1 className="text-2xl font-bold tracking-tight">
               <span className="text-primary">SUMMARI</span>

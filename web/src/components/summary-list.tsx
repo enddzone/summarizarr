@@ -23,6 +23,59 @@ interface SummaryListProps {
   onDelete?: (id: number) => Promise<void> | void
 }
 
+// Shared header component factory to eliminate duplication
+const createHeaderComponent = (
+  level: 'h1' | 'h2' | 'h3',
+  containerClass: string,
+  textClass: string,
+  isFirst = false
+) => {
+  const Component = (props: { children?: React.ReactNode }) => (
+    <div className={`${containerClass} ${isFirst ? 'first:border-t-0 first:pt-0 first:mt-0' : ''}`}>
+      <h3 className={textClass}>{props.children}</h3>
+    </div>
+  )
+  Component.displayName = `HeaderComponent${level.toUpperCase()}`
+  return Component
+}
+
+// Shared markdown component configurations
+const createMarkdownComponents = () => {
+  return {
+    p: (props: { children?: React.ReactNode }) => (
+      <p className="text-sm leading-relaxed mb-3">
+        {props.children}
+      </p>
+    ),
+    ul: (props: { children?: React.ReactNode }) => (
+      <ul className="text-sm space-y-2 mb-4 pl-4">
+        {props.children}
+      </ul>
+    ),
+    li: (props: { children?: React.ReactNode }) => (
+      <li className="text-sm leading-relaxed text-muted-foreground">{props.children}</li>
+    ),
+    h1: createHeaderComponent(
+      'h1',
+      'border-t border-border pt-3 mt-4',
+      'text-base font-semibold mb-2 text-foreground',
+      true
+    ),
+    h2: createHeaderComponent(
+      'h2',
+      'border-t border-border pt-3 mt-4',
+      'text-base font-semibold mb-2 text-foreground',
+      true
+    ),
+    h3: createHeaderComponent(
+      'h3',
+      'border-t border-border pt-3 mt-4',
+      'text-base font-semibold mb-2 text-foreground',
+      true
+    ),
+  }
+}
+
 export function SummaryList({ summaries, onDelete }: SummaryListProps) {
   const palette = [
     '#3498db',
@@ -92,7 +145,9 @@ export function SummaryList({ summaries, onDelete }: SummaryListProps) {
           </CardHeader>
           <CardContent>
             <div className="prose prose-sm max-w-none dark:prose-invert">
-              <ReactMarkdown>{cleanSummaryText(summary.text)}</ReactMarkdown>
+              <ReactMarkdown components={createMarkdownComponents()}>
+                {cleanSummaryText(summary.text)}
+              </ReactMarkdown>
             </div>
           </CardContent>
         </Card>
