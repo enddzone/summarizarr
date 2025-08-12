@@ -43,10 +43,6 @@ export function DatePickerWithRange({ value, onChange, className, activePreset: 
     onPresetChange?.(preset)
   }
 
-  React.useEffect(() => {
-    setDate({ from: value.start, to: value.end })
-  }, [value.start, value.end])
-
   const handleSelect = (newDate?: DateRange) => {
     // Update local state eagerly so the UI reflects the first click (from-day)
     if (newDate) {
