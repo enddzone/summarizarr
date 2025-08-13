@@ -4,7 +4,7 @@
 @theme {
   --font-family-sans: var(--font-geist-sans);
   --font-family-mono: var(--font-geist-mono);
-  
+
   /* Colors */
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -30,12 +30,12 @@
   --color-chart-3: hsl(var(--chart-3));
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
-  
+
   /* Border radius */
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-  
+
   /* Animations */
   --animate-fade-in: fade-in 0.5s ease-in-out;
   --animate-slide-up: slide-up 0.3s ease-out;
@@ -43,39 +43,60 @@
 }
 
 @keyframes fade-in {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
 }
 
 @keyframes slide-up {
-  0% { transform: translateY(10px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
+  0% {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 @layer base {
   :root {
-  /* Flat UI Colors (subtle) */
-  /* Backgrounds & Surfaces */
-  --background: 210 33% 97%; /* #f7f9fb subtle tint from Clouds */
-  --foreground: 210 29% 18%; /* #34495e Wet Asphalt for text */
-  --card: 0 0% 100%;
-  --card-foreground: 210 29% 18%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 210 29% 18%;
-  /* Accent & States */
-  --primary: 276 71% 53%; /* #9834dc Peter River */
-  --primary-foreground: 0 0% 100%; /* white text on primary */
-  --secondary: 204 70% 95%; /* very light tint of primary */
-  --secondary-foreground: 204 70% 20%;
-  --muted: 200 20% 95%; /* soft neutral */
-  --muted-foreground: 204 9% 50%; /* #7f8c8d Asbestos */
-  --accent: 204 70% 96%;
-  --accent-foreground: 204 70% 25%;
-  --destructive: 6 78% 60%; /* #e74c3c Alizarin */
-  --destructive-foreground: 0 0% 100%;
-  --border: 210 17% 90%; /* #e3e7ea subtle border */
-  --input: 210 17% 90%;
-  --ring: 204 70% 54%;
+    /* Flat UI Colors (subtle) */
+    /* Backgrounds & Surfaces */
+    --background: 210 33% 97%;
+    /* #f7f9fb subtle tint from Clouds */
+    --foreground: 210 29% 18%;
+    /* #34495e Wet Asphalt for text */
+    --card: 0 0% 100%;
+    --card-foreground: 210 29% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 29% 18%;
+    /* Accent & States */
+    --primary: 276 71% 53%;
+    /* #9834dc Peter River */
+    --primary-foreground: 0 0% 100%;
+    /* white text on primary */
+    --secondary: 204 70% 95%;
+    /* very light tint of primary */
+    --secondary-foreground: 204 70% 20%;
+    --muted: 200 20% 95%;
+    /* soft neutral */
+    --muted-foreground: 204 9% 50%;
+    /* #7f8c8d Asbestos */
+    --accent: 204 70% 96%;
+    --accent-foreground: 204 70% 25%;
+    --destructive: 6 78% 60%;
+    /* #e74c3c Alizarin */
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 17% 90%;
+    /* #e3e7ea subtle border */
+    --input: 210 17% 90%;
+    --ring: 204 70% 54%;
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
@@ -85,25 +106,25 @@
   }
 
   .dark {
-  --background: 220 13% 9%;
-  --foreground: 0 0% 98%;
-  --card: 220 13% 11%;
-  --card-foreground: 0 0% 98%;
-  --popover: 220 13% 11%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 0 0% 100%;
-  --primary-foreground: 220 13% 11%;
-  --secondary: 220 13% 16%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 220 13% 16%;
-  --muted-foreground: 210 9% 70%;
-  --accent: 220 13% 16%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 6 78% 40%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 220 13% 16%;
-  --input: 220 13% 16%;
-  --ring: 204 70% 54%;
+    --background: 220 13% 9%;
+    --foreground: 0 0% 98%;
+    --card: 220 13% 11%;
+    --card-foreground: 0 0% 98%;
+    --popover: 220 13% 11%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 220 13% 11%;
+    --secondary: 220 13% 16%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 220 13% 16%;
+    --muted-foreground: 210 9% 70%;
+    --accent: 220 13% 16%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 6 78% 40%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 16%;
+    --input: 220 13% 16%;
+    --ring: 204 70% 54%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
@@ -112,32 +133,60 @@
   }
 }
 
-  /* Dialog pop-out animation */
-  @keyframes pop-out {
-    0% { 
-      transform: translate(-50%, -50%) scale(0.85); 
-      opacity: 0; 
-    }
-    50% { 
-      transform: translate(-50%, -50%) scale(1.02); 
-      opacity: 0.8; 
-    }
-    100% { 
-      transform: translate(-50%, -50%) scale(1); 
-      opacity: 1; 
-    }
+/* Dialog pop-out animation */
+@keyframes pop-out {
+  0% {
+    transform: translate(-50%, -50%) scale(0.85);
+    opacity: 0;
   }
-  .animate-pop-out {
-    animation: pop-out 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.02);
+    opacity: 0.8;
   }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-pop-out {
+  animation: pop-out 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
 
 @layer base {
   * {
     @apply border-border;
   }
+
   body {
-  @apply bg-background text-foreground;
-  background-image: linear-gradient(180deg, hsl(var(--background)) 0%, #ffffff 60%, hsl(var(--background)) 100%);
+    @apply bg-background text-foreground;
+    background-image: linear-gradient(180deg, hsl(var(--background)) 0%, #ffffff 60%, hsl(var(--background)) 100%);
+    /* Prevent horizontal scroll on mobile */
+    overflow-x: hidden;
+  }
+
+  /* Improve mobile touch targets and interaction */
+  @media (max-width: 768px) {
+
+    button,
+    [role="button"],
+    a {
+      @apply min-h-[44px] min-w-[44px];
+    }
+
+    /* Prevent iOS zoom on input focus by setting font-size to 16px */
+    input,
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+
+  /* Improve scrolling on mobile */
+  * {
+    -webkit-overflow-scrolling: touch;
   }
 }
 
@@ -145,7 +194,7 @@
   .animate-fade-in {
     animation: fade-in 0.5s ease-in-out;
   }
-  
+
   .animate-slide-up {
     animation: slide-up 0.3s ease-out;
   }
