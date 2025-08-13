@@ -36,7 +36,7 @@ export function SummaryDashboard() {
   })
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [showSignalSetup, setShowSignalSetup] = useState(false)
-  
+
   const { toast } = useToast()
 
   // Restore view mode from localStorage on mount
@@ -71,7 +71,7 @@ export function SummaryDashboard() {
       // Only add time range filters if not "All time"
       // Check both the epoch date and the active preset to determine if this is "all time"
       const isAllTime = filters.timeRange.start.getTime() === 0 && filters.activePreset === 'all-time'
-      
+
       console.log('=== fetchSummaries Debug ===')
       console.log('filters.timeRange.start:', filters.timeRange.start)
       console.log('filters.timeRange.start.getTime():', filters.timeRange.start.getTime())
@@ -79,7 +79,7 @@ export function SummaryDashboard() {
       console.log('filters.activePreset:', filters.activePreset)
       console.log('isAllTime calculated:', isAllTime)
       console.log('=== End Debug ===')
-      
+
       if (!isAllTime) {
         const startTime = Math.floor(filters.timeRange.start.getTime() / 1000).toString()
         const endTime = Math.floor(filters.timeRange.end.getTime() / 1000).toString()
@@ -97,11 +97,11 @@ export function SummaryDashboard() {
       console.log('Fetching summaries with params:', params.toString())
       const response = await fetch(`/api/summaries?${params}`)
       if (!response.ok) throw new Error('Failed to fetch summaries')
-      
+
       const data = await response.json()
       console.log('Raw summaries response:', data)
       const summariesData = Array.isArray(data) ? data : data.summaries || []
-      
+
       // Group names are now included in the API response
       console.log('Summaries with group names:', summariesData)
       setSummaries(summariesData)
@@ -119,7 +119,7 @@ export function SummaryDashboard() {
     try {
       const response = await fetch('/api/groups')
       if (!response.ok) throw new Error('Failed to fetch groups')
-      
+
       const data = await response.json()
       const groupsData = Array.isArray(data) ? data : data.groups || []
       setGroups(groupsData)
@@ -137,7 +137,7 @@ export function SummaryDashboard() {
     try {
       const response = await fetch('/api/signal/config')
       if (!response.ok) throw new Error('Failed to fetch signal config')
-      
+
       const data = await response.json()
       setSignalConfig(data)
     } catch (error) {
@@ -235,8 +235,9 @@ export function SummaryDashboard() {
         onSignalSetup={() => setShowSignalSetup(true)}
         signalConfig={signalConfig}
       />
-      
-      <div className="mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+      {/* Responsive container with better mobile padding */}
+      <div className="mx-auto max-w-screen-2xl px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <FilterPanel
           filters={filters}
           onFiltersChange={setFilters}
@@ -244,8 +245,8 @@ export function SummaryDashboard() {
         />
 
         {summaries.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">No summaries found</p>
+          <div className="text-center py-8 sm:py-12">
+            <p className="text-muted-foreground text-sm sm:text-base">No summaries found</p>
           </div>
         ) : viewMode === 'timeline' ? (
           <div className="overflow-x-auto">

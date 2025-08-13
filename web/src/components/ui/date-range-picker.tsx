@@ -73,26 +73,36 @@ export function DatePickerWithRange({ value, onChange, className, activePreset: 
             id="date"
             variant={"outline"}
             className={cn(
-              "w-[300px] justify-start text-left font-normal",
+              "w-full sm:w-[300px] justify-start text-left font-normal text-sm",
               !date && "text-muted-foreground"
             )}
           >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {date?.from ? (
-              date.to ? (
-                <>
-                  {format(date.from, "LLL dd, y")} -{" "}
-                  {format(date.to, "LLL dd, y")}
-                </>
+            <CalendarIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+            <span className="truncate">
+              {date?.from ? (
+                date.to ? (
+                  <>
+                    <span className="hidden sm:inline">
+                      {format(date.from, "LLL dd, y")} -{" "}
+                      {format(date.to, "LLL dd, y")}
+                    </span>
+                    <span className="sm:hidden">
+                      {format(date.from, "MMM dd")} - {format(date.to, "MMM dd")}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="hidden sm:inline">{format(date.from, "LLL dd, y")}</span>
+                    <span className="sm:hidden">{format(date.from, "MMM dd")}</span>
+                  </>
+                )
               ) : (
-                format(date.from, "LLL dd, y")
-              )
-            ) : (
-              <span>Pick a date range</span>
-            )}
+                <span>Pick a date range</span>
+              )}
+            </span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
+        <PopoverContent className="w-auto p-0 max-w-[95vw] sm:max-w-none" align="start">
           <div className="p-2 border-b bg-background/80">
             <div className="flex flex-wrap gap-2">
               <Button variant={activePreset === 'all-time' ? 'default' : 'secondary'} size="sm" onClick={() => {
@@ -149,14 +159,26 @@ export function DatePickerWithRange({ value, onChange, className, activePreset: 
               }}>Last 12h</Button>
             </div>
           </div>
-          <Calendar
-            initialFocus
-            mode="range"
-            defaultMonth={date?.from}
-            selected={date}
-            onSelect={handleSelect}
-            numberOfMonths={2}
-          />
+          <div className="sm:hidden">
+            <Calendar
+              initialFocus
+              mode="range"
+              defaultMonth={date?.from}
+              selected={date}
+              onSelect={handleSelect}
+              numberOfMonths={1}
+            />
+          </div>
+          <div className="hidden sm:block">
+            <Calendar
+              initialFocus
+              mode="range"
+              defaultMonth={date?.from}
+              selected={date}
+              onSelect={handleSelect}
+              numberOfMonths={2}
+            />
+          </div>
         </PopoverContent>
       </Popover>
     </div>

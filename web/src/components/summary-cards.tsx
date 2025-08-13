@@ -36,7 +36,7 @@ interface SummaryCardsProps {
 function useOverflowDetection(dependency?: string) {
   const [isOverflowing, setIsOverflowing] = useState(false)
   const elementRef = useRef<HTMLDivElement>(null)
-  
+
   const checkOverflow = useCallback(() => {
     if (elementRef.current) {
       // Use requestAnimationFrame to ensure measurement happens after CSS is applied
@@ -47,14 +47,14 @@ function useOverflowDetection(dependency?: string) {
       })
     }
   }, [])
-  
+
   useEffect(() => {
     const element = elementRef.current
     if (!element) return
-    
+
     // ResizeObserver for dynamic content changes
     let resizeObserver: ResizeObserver | null = null
-    
+
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(checkOverflow)
       resizeObserver.observe(element)
@@ -62,10 +62,10 @@ function useOverflowDetection(dependency?: string) {
       // Fallback for browsers without ResizeObserver support
       console.warn('ResizeObserver not supported, using fallback')
     }
-    
+
     // Initial check after a brief delay to catch initial render
     const timeoutId = setTimeout(checkOverflow, 100)
-    
+
     return () => {
       if (resizeObserver) {
         resizeObserver.disconnect()
@@ -73,7 +73,7 @@ function useOverflowDetection(dependency?: string) {
       clearTimeout(timeoutId)
     }
   }, [dependency, checkOverflow])
-  
+
   return { isOverflowing, elementRef }
 }
 
@@ -96,7 +96,7 @@ const createHeaderComponent = (
 // Shared markdown component configurations
 const createMarkdownComponents = (variant: 'card' | 'dialog') => {
   const isCard = variant === 'card'
-  
+
   return {
     p: (props: { children?: React.ReactNode }) => (
       <p className={isCard ? 'text-sm leading-relaxed line-clamp-4 mb-2' : 'text-sm leading-relaxed mb-3'}>
@@ -190,7 +190,7 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
             role="button"
             tabIndex={0}
             aria-label={`Open summary for ${summary.group_name || `Group ${summary.group_id}`} from ${formatDistanceToNow(new Date(summary.created_at), { addSuffix: true })}`}
-            className="relative min-w-[18rem] h-full max-h-[260px] overflow-hidden flex flex-col transition-all duration-200 hover:scale-[1.01] hover:shadow-[0_10px_44px_rgba(52,152,219,0.25)] hover:ring-2 hover:ring-primary/50 hover:ring-offset-2 hover:ring-offset-background cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+            className="relative min-w-0 sm:min-w-[16rem] h-full max-h-[260px] overflow-hidden flex flex-col transition-all duration-200 hover:scale-[1.01] hover:shadow-[0_10px_44px_rgba(52,152,219,0.25)] hover:ring-2 hover:ring-primary/50 hover:ring-offset-2 hover:ring-offset-background cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
           >
             {onDelete && (
               <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -201,7 +201,7 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
                     onClick={handleDeleteClick}
                     onKeyDown={handleDeleteKeyDown}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                   </button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -211,7 +211,7 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction 
+                    <AlertDialogAction
                       onClick={handleDeleteConfirm}
                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
@@ -278,7 +278,7 @@ export function SummaryCards({ summaries, onDelete }: SummaryCardsProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
       {summaries.map((summary) => (
         <CardWithOverflowDetection
           key={summary.id}

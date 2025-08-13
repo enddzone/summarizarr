@@ -37,57 +37,69 @@ export function Header({
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4 flex h-16 items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center">
+        <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-4 min-w-0 flex-1">
+          <div className="flex items-center min-w-0">
+            {/* Responsive logo sizing - smaller on tablets, larger on desktop */}
             <Image
-              src="/main.png"
+              src="/main.svg"
               alt="Summarizarr Logo"
               width={96}
               height={96}
-              className="w-28 h-28 object-contain mt-4 -mr-6"
+              className="hidden md:block w-16 md:w-20 lg:w-28 h-16 md:h-20 lg:h-28 object-contain mt-3 md:mt-4 -mr-2 md:-mr-4 lg:-mr-6"
             />
-            <h1 className="text-2xl font-bold tracking-tight">
+            <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold tracking-tight truncate">
               <span className="text-primary">SUMMARI</span>
               <span className="text-orange-600">ZARR</span>
             </h1>
           </div>
-          <Badge variant={signalConfig.isRegistered ? "default" : "secondary"} className="flex items-center gap-1.5">
+          <Badge
+            variant={signalConfig.isRegistered ? "default" : "secondary"}
+            className="hidden sm:flex items-center gap-1.5 flex-shrink-0 text-xs"
+          >
             {signalConfig.isRegistered && (
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             )}
-            {signalConfig.isRegistered ? "Signal Connected" : "Signal Not Connected"}
+            <span className="hidden lg:inline">
+              {signalConfig.isRegistered ? "Signal Connected" : "Signal Not Connected"}
+            </span>
+            <span className="lg:hidden">
+              {signalConfig.isRegistered ? "Connected" : "Not Connected"}
+            </span>
           </Badge>
         </div>
 
-        <div className="flex items-center space-x-2">
-          {/* View Mode Toggle */}
-          <div className="flex items-center border rounded-lg p-1">
+        <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+          {/* View Mode Toggle - Hidden on mobile, show cards-only on small screens */}
+          <div className="hidden sm:flex items-center border rounded-lg p-1">
             <Button
               variant={viewMode === 'timeline' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => onViewModeChange('timeline')}
-              className="px-3"
+              className="px-2 sm:px-3"
             >
               <List className="h-4 w-4" />
-              Timeline
+              <span className="hidden sm:inline ml-1">Timeline</span>
             </Button>
             <Button
               variant={viewMode === 'cards' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => onViewModeChange('cards')}
-              className="px-3"
+              className="px-2 sm:px-3"
             >
               <LayoutGrid className="h-4 w-4" />
-              Cards
+              <span className="hidden sm:inline ml-1">Cards</span>
             </Button>
           </div>
 
           {/* Sort Order */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="hidden sm:flex">
                 <ArrowUpDown className="h-4 w-4 mr-2" />
-                {sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}
+                <span className="hidden lg:inline">
+                  {sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}
+                </span>
+                <span className="lg:hidden">Sort</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -100,28 +112,72 @@ export function Header({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Export */}
-          <Button variant="outline" size="sm" onClick={onExport}>
-            <Download className="h-4 w-4 mr-2" />
-            Export
-          </Button>
+          {/* Mobile Sort Button */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="sm:hidden">
+                <ArrowUpDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onSortOrderChange('newest')}>
+                Newest First
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onSortOrderChange('oldest')}>
+                Oldest First
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          {/* Signal Setup */}
-          <Button variant="outline" size="sm" onClick={onSignalSetup}>
-            <Settings className="h-4 w-4 mr-2" />
-            Signal Setup
-          </Button>
+          {/* Actions Menu for smaller screens */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="md:hidden">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={onExport}>
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onSignalSetup}>
+                <Settings className="h-4 w-4 mr-2" />
+                Signal Setup
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+                <Sun className="h-4 w-4 mr-2 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                <Moon className="absolute h-4 w-4 mr-2 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                Toggle Theme
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          {/* Theme Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-          >
-            <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-            <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-            <span className="sr-only">Toggle theme</span>
-          </Button>
+          {/* Desktop Actions */}
+          <div className="hidden md:flex items-center space-x-2">
+            {/* Export */}
+            <Button variant="outline" size="sm" onClick={onExport}>
+              <Download className="h-4 w-4 mr-2" />
+              <span className="hidden lg:inline">Export</span>
+            </Button>
+
+            {/* Signal Setup */}
+            <Button variant="outline" size="sm" onClick={onSignalSetup}>
+              <Settings className="h-4 w-4 mr-2" />
+              <span className="hidden lg:inline">Signal Setup</span>
+            </Button>
+
+            {/* Theme Toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            >
+              <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+              <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+              <span className="sr-only">Toggle theme</span>
+            </Button>
+          </div>
         </div>
       </div>
     </header>
