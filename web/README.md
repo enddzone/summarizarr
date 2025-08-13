@@ -122,8 +122,8 @@ NEXT_TELEMETRY_DISABLED=1
 # Signal configuration
 SIGNAL_PHONE_NUMBER=+1234567890
 
-# AI backend settings
-AI_BACKEND=local  # or 'openai'
+# AI provider settings
+AI_PROVIDER=local  # supports 'local', 'openai', 'groq', 'gemini', 'claude'
 OLLAMA_HOST=127.0.0.1:11434
 OPENAI_API_KEY=your_openai_key
 

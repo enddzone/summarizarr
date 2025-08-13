@@ -12,6 +12,11 @@ import (
 	"time"
 )
 
+const (
+	// Standard timeout for AI provider HTTP clients
+	StandardClientTimeout = 120 * time.Second
+)
+
 // Client provides an OpenAI-compatible interface for local Ollama models
 type Client struct {
 	baseURL string
@@ -25,7 +30,7 @@ func NewClient(host, model string) *Client {
 		baseURL: fmt.Sprintf("http://%s", host),
 		model:   model,
 		client: &http.Client{
-			Timeout: 120 * time.Second, // Increased timeout for model downloads
+			Timeout: StandardClientTimeout, // Standardized timeout for model downloads and inference
 		},
 	}
 }

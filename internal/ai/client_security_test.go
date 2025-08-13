@@ -118,7 +118,7 @@ func TestSanitizeSummaryFormat_ReDoSProtection(t *testing.T) {
 			expected: "## Key topics discussed\n\n- Content",
 		},
 		{
-			name:     "header normalization - colon format", 
+			name:     "header normalization - colon format",
 			input:    "Key topics discussed:\n- Content",
 			expected: "Key topics discussed:\n- Content", // This header format isn't in the expected list, so it won't match
 		},
@@ -301,16 +301,16 @@ func TestSubstituteUserNames_ErrorHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &Client{db: tt.mockDB}
-			
+
 			result, err := client.substituteUserNames(tt.summary, tt.messages)
-			
+
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
-			
+
 			if result != tt.expected {
 				t.Errorf("substituteUserNames() = %q, expected %q", result, tt.expected)
 			}
@@ -423,7 +423,7 @@ func TestClient_Summarize_ErrorHandling(t *testing.T) {
 			},
 			mockDB: &MockDB{
 				shouldError: false,
-				users: map[int64]string{456: "Alice"},
+				users:       map[int64]string{456: "Alice"},
 			},
 			messages: []database.MessageForSummary{
 				{UserID: 456, Text: "Let's discuss topics"},

@@ -61,8 +61,8 @@ func main() {
 
 	// Initialize AI backend based on configuration
 	var ollamaManager *ollama.Manager
-	if cfg.AIBackend == "local" {
-		slog.Info("AI_BACKEND=local detected. Initializing Ollama backend...")
+	if cfg.AIProvider == "local" {
+		slog.Info("AI_PROVIDER=local detected. Initializing Ollama backend...")
 
 		// Ensure the models directory exists for Ollama
 		if err := os.MkdirAll(cfg.ModelsPath, 0755); err != nil {
@@ -93,16 +93,16 @@ func main() {
 				}
 			}()
 		}
-	} else if cfg.AIBackend == "openai" {
-		slog.Info("AI_BACKEND=openai detected. Initializing OpenAI backend...")
+	} else if cfg.AIProvider == "openai" {
+		slog.Info("AI_PROVIDER=openai detected. Initializing OpenAI backend...")
 
 		// Validate required OpenAI configuration
 		if cfg.OpenAIAPIKey == "" {
-			slog.Error("OPENAI_API_KEY environment variable is required when AI_BACKEND=openai")
+			slog.Error("OPENAI_API_KEY environment variable is required when AI_PROVIDER=openai")
 			os.Exit(1)
 		}
 	} else {
-		slog.Error("Invalid AI_BACKEND configuration", "backend", cfg.AIBackend, "supported", "local, openai")
+		slog.Error("Invalid AI_PROVIDER configuration", "provider", cfg.AIProvider, "supported", "local, openai, groq, gemini, claude")
 		os.Exit(1)
 	}
 
@@ -114,7 +114,7 @@ func main() {
 	}
 
 	// Test the AI backend
-	if err := testAIBackend(ctx, aiClient, cfg, db); err != nil {
+	if err := testAIProvider(ctx, aiClient, cfg, db); err != nil {
 		slog.Error("Failed to test AI backend", "error", err)
 		os.Exit(1)
 	}
@@ -155,15 +155,18 @@ func main() {
 	}
 }
 
-// testAIBackend tests the AI backend and ensures it's ready
-func testAIBackend(ctx context.Context, aiClient *ai.Client, cfg *config.Config, db *database.DB) error {
-	switch cfg.AIBackend {
+// testAIProvider tests the AI provider and ensures it's ready
+func testAIProvider(ctx context.Context, aiClient *ai.Client, cfg *config.Config, db *database.DB) error {
+	switch cfg.AIProvider {
 	case "local":
 		return testOllamaBackend(ctx, aiClient, cfg, db)
 	case "openai":
 		return testOpenAIBackend(ctx, aiClient, cfg)
+	case "groq", "gemini", "claude":
+		// These providers use the same client as OpenAI, so we can test them the same way
+		return testOpenAIBackend(ctx, aiClient, cfg)
 	default:
-		return fmt.Errorf("unsupported AI backend: %s", cfg.AIBackend)
+		return fmt.Errorf("unsupported AI provider: %s", cfg.AIProvider)
 	}
 }
 
@@ -313,25 +316,40 @@ func testOpenAIBackend(ctx context.Context, aiClient *ai.Client, cfg *config.Con
 	return nil
 }
 
-// validateConfig validates backend-specific configuration requirements
+// validateConfig validates provider-specific configuration requirements
 func validateConfig(cfg *config.Config) error {
-	// Check required environment variables based on backend
-	switch cfg.AIBackend {
+	// Check required environment variables based on provider
+	switch cfg.AIProvider {
 	case "openai":
 		if cfg.OpenAIAPIKey == "" {
-			return fmt.Errorf("OPENAI_API_KEY is required when AI_BACKEND=openai")
+			return fmt.Errorf("OPENAI_API_KEY is required when AI_PROVIDER=openai")
 		}
 		if cfg.OpenAIModel == "" {
-			return fmt.Errorf("OPENAI_MODEL is required when AI_BACKEND=openai")
+			return fmt.Errorf("OPENAI_MODEL is required when AI_PROVIDER=openai")
 		}
-		slog.Info("Using OpenAI backend", "model", cfg.OpenAIModel)
+		slog.Info("Using OpenAI provider", "model", cfg.OpenAIModel)
+	case "groq":
+		if cfg.GroqAPIKey == "" {
+			return fmt.Errorf("GROQ_API_KEY is required when AI_PROVIDER=groq")
+		}
+		slog.Info("Using Groq provider", "model", cfg.GroqModel)
+	case "gemini":
+		if cfg.GeminiAPIKey == "" {
+			return fmt.Errorf("GEMINI_API_KEY is required when AI_PROVIDER=gemini")
+		}
+		slog.Info("Using Gemini provider", "model", cfg.GeminiModel)
+	case "claude":
+		if cfg.ClaudeAPIKey == "" {
+			return fmt.Errorf("CLAUDE_API_KEY is required when AI_PROVIDER=claude")
+		}
+		slog.Info("Using Claude provider", "model", cfg.ClaudeModel)
 	case "local":
 		if cfg.LocalModel == "" {
-			return fmt.Errorf("LOCAL_MODEL is required when AI_BACKEND=local")
+			return fmt.Errorf("LOCAL_MODEL is required when AI_PROVIDER=local")
 		}
-		slog.Info("Using Ollama backend", "model", cfg.LocalModel, "host", cfg.OllamaHost)
+		slog.Info("Using Ollama provider", "model", cfg.LocalModel, "host", cfg.OllamaHost)
 	default:
-		return fmt.Errorf("unsupported AI_BACKEND: %s (supported: 'local', 'openai')", cfg.AIBackend)
+		return fmt.Errorf("unsupported AI_PROVIDER: %s (supported: 'local', 'openai', 'groq', 'gemini', 'claude')", cfg.AIProvider)
 	}
 
 	// Check required general settings
