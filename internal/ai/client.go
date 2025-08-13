@@ -2,14 +2,15 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 	"summarizarr/internal/config"
 	"summarizarr/internal/database"
+	"summarizarr/internal/llm"
 	"summarizarr/internal/ollama"
-	openaiclient "summarizarr/internal/openai"
 	"time"
 )
 
@@ -28,6 +29,9 @@ var (
 	maxSummarySize = 50 * 1024 // 50KB
 	// Timeout for regex operations
 	regexTimeout = 5 * time.Second
+
+	// Standard timeout for all AI provider HTTP clients
+	standardClientTimeout = 120 * time.Second
 )
 
 // SummarizationPrompt is the template used for all LLM backends
@@ -163,17 +167,95 @@ type Client struct {
 	db      DB
 }
 
+// validateProviderConfig validates provider-specific configuration requirements
+func validateProviderConfig(cfg *config.Config) error {
+	provider := cfg.AIProvider
+
+	switch provider {
+	case "local":
+		if cfg.OllamaHost == "" {
+			return errors.New("OLLAMA_HOST is required for local provider")
+		}
+		if cfg.LocalModel == "" {
+			return errors.New("LOCAL_MODEL is required for local provider")
+		}
+	case "openai":
+		if cfg.OpenAIAPIKey == "" {
+			return errors.New("OPENAI_API_KEY is required for openai provider")
+		}
+		if cfg.OpenAIModel == "" {
+			return errors.New("OPENAI_MODEL is required for openai provider")
+		}
+	case "groq":
+		if cfg.GroqAPIKey == "" {
+			return errors.New("GROQ_API_KEY is required for groq provider")
+		}
+		if cfg.GroqModel == "" {
+			return errors.New("GROQ_MODEL is required for groq provider")
+		}
+	case "gemini":
+		if cfg.GeminiAPIKey == "" {
+			return errors.New("GEMINI_API_KEY is required for gemini provider")
+		}
+		if cfg.GeminiModel == "" {
+			return errors.New("GEMINI_MODEL is required for gemini provider")
+		}
+	case "claude":
+		if cfg.ClaudeAPIKey == "" {
+			return errors.New("CLAUDE_API_KEY is required for claude provider")
+		}
+		if cfg.ClaudeModel == "" {
+			return errors.New("CLAUDE_MODEL is required for claude provider")
+		}
+	case "":
+		return errors.New("AI_PROVIDER must be specified")
+	default:
+		return fmt.Errorf("unsupported AI provider: %s (supported: 'local', 'openai', 'groq', 'gemini', 'claude')", provider)
+	}
+
+	return nil
+}
+
 // NewClient creates a new AI client based on the configuration.
 func NewClient(cfg *config.Config, db DB) (*Client, error) {
+	// Validate configuration before creating client
+	if err := validateProviderConfig(cfg); err != nil {
+		return nil, fmt.Errorf("provider validation failed: %w", err)
+	}
+
 	var backend AIClient
-	switch cfg.AIBackend {
+	provider := cfg.AIProvider
+
+	switch provider {
 	case "local":
 		backend = ollama.NewClient(cfg.OllamaHost, cfg.LocalModel)
 	case "openai":
-		// Use OpenAI backend - no longer needs db since post-processing is handled here
-		backend = openaiclient.NewClient(cfg.OpenAIAPIKey, cfg.OpenAIModel)
+		backend = llm.NewClient(llm.Config{
+			APIKey:  cfg.OpenAIAPIKey,
+			Model:   cfg.OpenAIModel,
+			BaseURL: cfg.OpenAIBaseURL,
+		})
+	case "groq":
+		backend = llm.NewClient(llm.Config{
+			APIKey:  cfg.GroqAPIKey,
+			Model:   cfg.GroqModel,
+			BaseURL: cfg.GroqBaseURL,
+		})
+	case "gemini":
+		backend = llm.NewClient(llm.Config{
+			APIKey:  cfg.GeminiAPIKey,
+			Model:   cfg.GeminiModel,
+			BaseURL: cfg.GeminiBaseURL,
+		})
+	case "claude":
+		backend = llm.NewClient(llm.Config{
+			APIKey:  cfg.ClaudeAPIKey,
+			Model:   cfg.ClaudeModel,
+			BaseURL: cfg.ClaudeBaseURL,
+		})
 	default:
-		return nil, fmt.Errorf("unsupported AI backend: %s (supported: 'local', 'openai')", cfg.AIBackend)
+		// This should never be reached due to validation above, but keeping for safety
+		return nil, fmt.Errorf("unsupported AI provider: %s (supported: 'local', 'openai', 'groq', 'gemini', 'claude')", provider)
 	}
 	return &Client{backend: backend, db: db}, nil
 }

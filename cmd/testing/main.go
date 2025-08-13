@@ -29,8 +29,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Override AI_BACKEND for testing
-	os.Setenv("AI_BACKEND", backend)
+	// Override AI_PROVIDER for testing
+	os.Setenv("AI_PROVIDER", backend)
 
 	// Create configuration
 	cfg := config.New()
@@ -99,25 +99,25 @@ func main() {
 	fmt.Printf("Summary: %s\n", summary)
 }
 
-// validateConfig validates backend-specific configuration requirements
+// validateConfig validates provider-specific configuration requirements
 func validateConfig(cfg *config.Config) error {
-	// Check required environment variables based on backend
-	switch cfg.AIBackend {
+	// Check required environment variables based on provider
+	switch cfg.AIProvider {
 	case "openai":
 		if cfg.OpenAIAPIKey == "" {
-			return fmt.Errorf("OPENAI_API_KEY is required when AI_BACKEND=openai")
+			return fmt.Errorf("OPENAI_API_KEY is required when AI_PROVIDER=openai")
 		}
 		if cfg.OpenAIModel == "" {
-			return fmt.Errorf("OPENAI_MODEL is required when AI_BACKEND=openai")
+			return fmt.Errorf("OPENAI_MODEL is required when AI_PROVIDER=openai")
 		}
-		fmt.Printf("Using OpenAI backend with model: %s\n", cfg.OpenAIModel)
+		fmt.Printf("Using OpenAI provider with model: %s\n", cfg.OpenAIModel)
 	case "local":
 		if cfg.LocalModel == "" {
-			return fmt.Errorf("LOCAL_MODEL is required when AI_BACKEND=local")
+			return fmt.Errorf("LOCAL_MODEL is required when AI_PROVIDER=local")
 		}
-		fmt.Printf("Using Ollama backend with model: %s (host: %s)\n", cfg.LocalModel, cfg.OllamaHost)
+		fmt.Printf("Using Ollama provider with model: %s (host: %s)\n", cfg.LocalModel, cfg.OllamaHost)
 	default:
-		return fmt.Errorf("unsupported AI_BACKEND: %s (supported: 'local', 'openai')", cfg.AIBackend)
+		return fmt.Errorf("unsupported AI_PROVIDER: %s (supported: 'local', 'openai', 'groq', 'gemini', 'claude')", cfg.AIProvider)
 	}
 
 	return nil

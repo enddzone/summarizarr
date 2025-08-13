@@ -1,13 +1,13 @@
 # Copilot Instructions for Summarizarr
 
 ## Project Overview
-Summarizarr is a Signal message summarizer that connects to Signal groups via WebSocket, stores messages in SQLite, and generates periodic AI summaries using local AI (Ollama) or cloud AI (OpenAI-compatible APIs). The application runs as a containerized service alongside signal-cli-rest-api.
+Summarizarr is a Signal message summarizer that connects to Signal groups via WebSocket, stores messages in SQLite, and generates periodic AI summaries using multiple AI providers. Supports local AI (Ollama), cloud AI (OpenAI), and other OpenAI-compatible providers (Groq, Gemini via proxy, Claude via proxy). The application runs as a containerized service alongside signal-cli-rest-api.
 
 ## Architecture
 - **Signal Integration**: Connects to `signal-cli-rest-api` via WebSocket (`internal/signal/client.go`) to receive real-time messages
 - **Database Layer**: SQLite with schema defined in `schema.sql` - stores users, groups, messages, and summaries
-- **AI Processing**: Unified AI client (`internal/ai/client.go`) with backend selection (Ollama/OpenAI) and configurable scheduling (`internal/ai/scheduler.go`)
-- **Backend Abstraction**: Supports local AI (`internal/ollama/client.go`) and cloud AI (`internal/openai/client.go`) with consistent prompt handling
+- **AI Processing**: Unified AI client (`internal/ai/client.go`) with multi-provider support and configurable scheduling (`internal/ai/scheduler.go`)
+- **Backend Abstraction**: Supports local AI (Ollama) and multiple OpenAI-compatible cloud providers with consistent prompt handling
 - **API Server**: Simple HTTP server (`internal/api/server.go`) exposing summaries endpoint on port 8081
 - **Frontend**: Next.js 15 application in `web/` directory with shadcn/ui components, date filtering (default: "Today"), and responsive design
 - **Docker Setup**: Multi-service compose with signal-cli-rest-api dependency and health checks
@@ -58,15 +58,40 @@ type DB interface {
 - **Post-Processing**: User ID substitution with real names after LLM processing
 
 ### Environment Configuration
-All configuration is managed via environment variables and a `.env` file for local development. For production or sensitive data, use `.env` and never commit secrets to version control. Example:
+All configuration is managed via environment variables and a `.env` file for local development. For production or sensitive data, use `.env` and never commit secrets to version control. 
 
-```
-AI_BACKEND=openai
-OPENAI_API_KEY=your_key_here
+**Multi-Provider Support**: Use `AI_PROVIDER` to select between local, openai, groq, gemini, or claude.
+
+Example configurations:
+
+```bash
+# Local AI (Ollama)
+AI_PROVIDER=local
+LOCAL_MODEL=llama3.2:1b
 SIGNAL_PHONE_NUMBER=+18177392137
 SUMMARIZATION_INTERVAL=1h
+
+# OpenAI
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-proj-xxxxx
 OPENAI_MODEL=gpt-4o
-LOG_LEVEL=DEBUG
+
+# Groq
+AI_PROVIDER=groq
+GROQ_API_KEY=gsk_xxxxx
+GROQ_MODEL=llama3-8b-8192
+
+# Gemini (requires proxy)
+AI_PROVIDER=gemini
+GEMINI_API_KEY=xxxxx
+GEMINI_MODEL=gemini-2.0-flash
+GEMINI_BASE_URL=http://localhost:8000/hf/v1
+
+# Claude (requires proxy)
+AI_PROVIDER=claude
+CLAUDE_API_KEY=sk-ant-xxxxx
+CLAUDE_MODEL=claude-3-sonnet
+CLAUDE_BASE_URL=http://localhost:8000/openai/v1
 ```
 
 For local development, copy `.env.example` to `.env` and fill in your values. The Makefile automatically loads `.env` for all local development targets. For OpenAI setup and testing, see `OPENAI_TESTING.md`.
@@ -74,14 +99,20 @@ For local development, copy `.env.example` to `.env` and fill in your values. Th
 ### Required Environment Variables
 | Variable                | Required | Default   | Description                                      |
 |-------------------------|----------|-----------|--------------------------------------------------|
-| AI_BACKEND              | No       | local     | AI backend: 'local' (Ollama) or 'openai'        |
-| OPENAI_API_KEY          | No*      | -         | OpenAI API key (*required when AI_BACKEND=openai)|
+| AI_PROVIDER             | No       | local     | AI provider: local, openai, groq, gemini, claude |
 | SIGNAL_PHONE_NUMBER     | Yes      | -         | Signal phone number (e.g., +1234567890)          |
 | SUMMARIZATION_INTERVAL  | No       | 12h       | How often to generate summaries (e.g., 1h, 12h)  |
-| OPENAI_MODEL            | No       | gpt-4o    | OpenAI model to use                              |
-| LOCAL_MODEL             | No       | llama3.2:1b | Local Ollama model to use                      |
 | LOG_LEVEL               | No       | INFO      | Log level (DEBUG, INFO, WARN, ERROR)             |
 | DATABASE_PATH           | No       | summarizarr.db | Database file path                          |
+
+#### Provider-Specific Variables
+| Provider | API Key Variable | Model Variable | Base URL Variable |
+|----------|------------------|----------------|-------------------|
+| local    | -                | LOCAL_MODEL (llama3.2:1b) | OLLAMA_HOST |
+| openai   | OPENAI_API_KEY   | OPENAI_MODEL (gpt-4o) | OPENAI_BASE_URL |
+| groq     | GROQ_API_KEY     | GROQ_MODEL (llama3-8b-8192) | GROQ_BASE_URL |
+| gemini   | GEMINI_API_KEY   | GEMINI_MODEL (gemini-2.0-flash) | GEMINI_BASE_URL |
+| claude   | CLAUDE_API_KEY   | CLAUDE_MODEL (claude-3-sonnet) | CLAUDE_BASE_URL |
 
 For local development, copy `.env.example` to `.env` and fill in your values. The Makefile automatically loads `.env` for all local development targets.
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Summarizarr is an AI-powered Signal message summarizer that connects to Signal groups via WebSocket, stores messages in SQLite, and generates periodic AI summaries using local AI (Ollama) or cloud AI (OpenAI). The application consists of a Go backend, Next.js frontend, and Signal CLI integration running as containerized services.
+Summarizarr is an AI-powered Signal message summarizer that connects to Signal groups via WebSocket, stores messages in SQLite, and generates periodic AI summaries using multiple AI providers. Supports local AI (Ollama), cloud AI (OpenAI), and other OpenAI-compatible providers (Groq, Gemini via proxy, Claude via proxy). The application consists of a Go backend, Next.js frontend, and Signal CLI integration running as containerized services.
 
 ## Architecture
 
@@ -19,9 +19,10 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 - Foreign key relationships and automatic migration system
 
 **AI Processing**: 
-- Unified AI client in `internal/ai/client.go` with backend selection
-- Supports Ollama (`internal/ollama/`) and OpenAI (`internal/openai/`)
-- Configurable scheduling via `internal/ai/scheduler.go`
+- Unified AI client in `internal/ai/client.go` with multi-provider support
+- Supports local AI (Ollama) and multiple OpenAI-compatible providers
+- Provider-specific configuration with sensible defaults
+- Configurable scheduling via `internal/ai/scheduler.go` 
 - Centralized prompt management and anonymization
 
 **API Server**: 
@@ -90,11 +91,27 @@ All configuration uses environment variables. For local development:
 1. Copy `.env.example` to `.env`
 2. Set required variables:
    - `SIGNAL_PHONE_NUMBER` (required)
-   - `AI_BACKEND` (local/openai)
-   - `OPENAI_API_KEY` (if using OpenAI)
+   - `AI_PROVIDER` (local/openai/groq/gemini/claude)
+   - Provider-specific API keys (if using cloud providers)
    - `SUMMARIZATION_INTERVAL` (e.g., 1h, 12h)
 
 The Makefile automatically loads `.env` for local development.
+
+### Multi-Provider Configuration
+
+**Provider Selection**: Use `AI_PROVIDER` to select between:
+- `local`: Ollama for local AI processing
+- `openai`: OpenAI cloud API 
+- `groq`: Groq cloud API (native OpenAI compatibility)
+- `gemini`: Google Gemini via OpenAI-compatible proxy
+- `claude`: Anthropic Claude via OpenAI-compatible proxy
+
+**Environment Variable Pattern**: Each provider uses consistent naming:
+- `{PROVIDER}_API_KEY`: API key for the provider
+- `{PROVIDER}_MODEL`: Model name to use
+- `{PROVIDER}_BASE_URL`: API endpoint (with sensible defaults)
+
+**Provider-Specific Defaults**: Each provider includes optimized defaults for base URLs and models.
 
 ## Key Go Patterns
 

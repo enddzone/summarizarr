@@ -12,15 +12,35 @@ type Config struct {
 	PhoneNumber           string
 	SignalURL             string
 	DatabasePath          string
-	AIBackend             string
 	LocalModel            string
 	OllamaAutoDownload    bool
 	OllamaKeepAlive       string
 	OllamaHost            string
 	ModelsPath            string
 	SummarizationInterval string
-	OpenAIAPIKey          string
-	OpenAIModel           string
+
+	// Generic provider configuration
+	AIProvider string
+
+	// OpenAI configuration
+	OpenAIAPIKey  string
+	OpenAIModel   string
+	OpenAIBaseURL string
+
+	// Groq configuration
+	GroqAPIKey  string
+	GroqModel   string
+	GroqBaseURL string
+
+	// Gemini configuration
+	GeminiAPIKey  string
+	GeminiModel   string
+	GeminiBaseURL string
+
+	// Claude configuration
+	ClaudeAPIKey  string
+	ClaudeModel   string
+	ClaudeBaseURL string
 }
 
 // New creates a new Config from environment variables.
@@ -33,11 +53,6 @@ func New() *Config {
 	modelsPath := os.Getenv("MODELS_PATH")
 	if modelsPath == "" {
 		modelsPath = "./models" // default path
-	}
-
-	aiBackend := os.Getenv("AI_BACKEND")
-	if aiBackend == "" {
-		aiBackend = "local" // always local for now
 	}
 
 	localModel := os.Getenv("LOCAL_MODEL")
@@ -70,10 +85,54 @@ func New() *Config {
 		signalURL = "signal-cli-rest-api:8080" // default for Docker
 	}
 
+	// Provider configuration
+	aiProvider := os.Getenv("AI_PROVIDER")
+	if aiProvider == "" {
+		aiProvider = "local" // default to local Ollama
+	}
+
+	// OpenAI configuration
 	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
 	openaiModel := os.Getenv("OPENAI_MODEL")
 	if openaiModel == "" {
 		openaiModel = "gpt-4o" // default model
+	}
+	openaiBaseURL := os.Getenv("OPENAI_BASE_URL")
+	if openaiBaseURL == "" {
+		openaiBaseURL = "https://api.openai.com/v1"
+	}
+
+	// Groq configuration
+	groqAPIKey := os.Getenv("GROQ_API_KEY")
+	groqModel := os.Getenv("GROQ_MODEL")
+	if groqModel == "" {
+		groqModel = "llama3-8b-8192" // default model
+	}
+	groqBaseURL := os.Getenv("GROQ_BASE_URL")
+	if groqBaseURL == "" {
+		groqBaseURL = "https://api.groq.com/openai/v1"
+	}
+
+	// Gemini configuration
+	geminiAPIKey := os.Getenv("GEMINI_API_KEY")
+	geminiModel := os.Getenv("GEMINI_MODEL")
+	if geminiModel == "" {
+		geminiModel = "gemini-2.0-flash" // default model
+	}
+	geminiBaseURL := os.Getenv("GEMINI_BASE_URL")
+	if geminiBaseURL == "" {
+		geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/openai" // default Gemini API URL
+	}
+
+	// Claude configuration
+	claudeAPIKey := os.Getenv("CLAUDE_API_KEY")
+	claudeModel := os.Getenv("CLAUDE_MODEL")
+	if claudeModel == "" {
+		claudeModel = "claude-3-sonnet" // default model
+	}
+	claudeBaseURL := os.Getenv("CLAUDE_BASE_URL")
+	if claudeBaseURL == "" {
+		claudeBaseURL = "https://api.anthropic.com/v1" // default Claude API URL
 	}
 
 	return &Config{
@@ -81,15 +140,30 @@ func New() *Config {
 		PhoneNumber:           os.Getenv("SIGNAL_PHONE_NUMBER"),
 		SignalURL:             signalURL,
 		DatabasePath:          databasePath,
-		AIBackend:             aiBackend,
 		LocalModel:            localModel,
 		OllamaAutoDownload:    ollamaAutoDownload,
 		OllamaKeepAlive:       ollamaKeepAlive,
 		OllamaHost:            ollamaHost,
 		ModelsPath:            modelsPath,
 		SummarizationInterval: summarizationInterval,
-		OpenAIAPIKey:          openaiAPIKey,
-		OpenAIModel:           openaiModel,
+
+		AIProvider: aiProvider,
+
+		OpenAIAPIKey:  openaiAPIKey,
+		OpenAIModel:   openaiModel,
+		OpenAIBaseURL: openaiBaseURL,
+
+		GroqAPIKey:  groqAPIKey,
+		GroqModel:   groqModel,
+		GroqBaseURL: groqBaseURL,
+
+		GeminiAPIKey:  geminiAPIKey,
+		GeminiModel:   geminiModel,
+		GeminiBaseURL: geminiBaseURL,
+
+		ClaudeAPIKey:  claudeAPIKey,
+		ClaudeModel:   claudeModel,
+		ClaudeBaseURL: claudeBaseURL,
 	}
 }
 

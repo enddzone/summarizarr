@@ -62,29 +62,125 @@ docker compose up -d
 
 ### 4. Configure AI Backend
 
-By default, the backend uses the local Ollama path with model `llama3.2:1b`. To switch to OpenAI, set environment variables (see Configuration). A detailed OpenAI test guide is in `OPENAI_TESTING.md`.
+Summarizarr supports multiple AI providers:
+- **Local (Ollama)**: Default, runs locally with model `llama3.2:1b`
+- **OpenAI**: Cloud-based with configurable models
+- **Groq**: Fast inference with native OpenAI compatibility
+- **Gemini**: Google's AI via OpenAI-compatible proxy
+- **Claude**: Anthropic's AI via OpenAI-compatible proxy
+
+Set environment variables to configure your preferred provider (see Configuration). A detailed OpenAI test guide is in `OPENAI_TESTING.md`.
 
 ## 🔧 Configuration
 
 ### Environment Variables
 
+#### Core Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AI_BACKEND` | `local` | AI backend: `local` (Ollama) or `openai` |
-| `LOCAL_MODEL` | `llama3.2:1b` | Ollama model name |
-| `OLLAMA_HOST` | `127.0.0.1:11434` | Ollama server address |
-| `OPENAI_API_KEY` | - | OpenAI API key (required when `AI_BACKEND=openai`) |
-| `OPENAI_MODEL` | `gpt-4o` | OpenAI model name |
+| `AI_PROVIDER` | `local` | AI provider: `local`, `openai`, `groq`, `gemini`, `claude` |
 | `SIGNAL_PHONE_NUMBER` | - | Phone number for Signal registration |
 | `DATABASE_PATH` | `/app/data/summarizarr.db` | SQLite database location |
 | `SUMMARIZATION_INTERVAL` | `12h` | How often to generate summaries (e.g., 30m, 1h, 6h) |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+#### Local AI (Ollama) Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOCAL_MODEL` | `llama3.2:1b` | Ollama model name |
+| `OLLAMA_HOST` | `127.0.0.1:11434` | Ollama server address |
 | `MODELS_PATH` | `./models` | Directory for Ollama models |
+
+#### OpenAI Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | - | OpenAI API key (required when `AI_PROVIDER=openai`) |
+| `OPENAI_MODEL` | `gpt-4o` | OpenAI model name |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI API base URL |
+
+#### Groq Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROQ_API_KEY` | - | Groq API key (required when `AI_PROVIDER=groq`) |
+| `GROQ_MODEL` | `llama3-8b-8192` | Groq model name |
+| `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | Groq API base URL |
+
+#### Gemini Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GEMINI_API_KEY` | - | Gemini API key (required when `AI_PROVIDER=gemini`) |
+| `GEMINI_MODEL` | `gemini-2.0-flash` | Gemini model name |
+| `GEMINI_BASE_URL` | `http://localhost:8000/hf/v1` | Gemini proxy base URL |
+
+#### Claude Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLAUDE_API_KEY` | - | Claude API key (required when `AI_PROVIDER=claude`) |
+| `CLAUDE_MODEL` | `claude-3-sonnet` | Claude model name |
+| `CLAUDE_BASE_URL` | `http://localhost:8000/openai/v1` | Claude proxy base URL |
+
+### Multi-Provider Setup Examples
+
+#### OpenAI (Default Cloud Provider)
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-proj-xxxxx
+OPENAI_MODEL=gpt-4o
+# OPENAI_BASE_URL defaults to https://api.openai.com/v1
+```
+
+#### Groq (Fast Inference)
+```env
+AI_PROVIDER=groq
+GROQ_API_KEY=gsk_xxxxx
+GROQ_MODEL=llama3-8b-8192
+# GROQ_BASE_URL defaults to https://api.groq.com/openai/v1
+```
+
+#### Local Ollama (Default)
+```env
+AI_PROVIDER=local
+LOCAL_MODEL=llama3.2:1b
+OLLAMA_HOST=127.0.0.1:11434
+```
+
+#### Gemini (Requires Proxy)
+```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=xxxxx
+GEMINI_MODEL=gemini-2.0-flash
+GEMINI_BASE_URL=http://localhost:8000/hf/v1  # Gemini Balance proxy
+```
+
+#### Claude (Requires Proxy)
+```env
+AI_PROVIDER=claude
+CLAUDE_API_KEY=sk-ant-xxxxx
+CLAUDE_MODEL=claude-3-sonnet
+CLAUDE_BASE_URL=http://localhost:8000/openai/v1  # OpenAI-compatible proxy
+```
+
+#### Setting Up Proxy Services
+For Gemini and Claude, you'll need OpenAI-compatible proxy services:
+
+**Gemini Balance Proxy**:
+```bash
+# Install and run Gemini Balance (example)
+npm install -g @google-ai/gemini-balance
+gemini-balance --port 8000 --api-key YOUR_GEMINI_KEY
+```
+
+**Claude Proxy**:
+```bash
+# Use community proxy services or set up your own
+# Example: anthropic-openai-bridge
+docker run -p 8000:8000 -e ANTHROPIC_API_KEY=your_key anthropic-proxy
+```
 
 ### Customizing Summarization
 Edit `docker-compose.yml` to adjust:
 - **Frequency**: Change `SUMMARIZATION_INTERVAL` (e.g., `30m`, `2h`, `1d`)
-- **AI Model**: Specify different Ollama models or OpenAI models
+- **AI Provider**: Switch between different providers and models
 - **Anonymization**: Toggle data anonymization features
 
 ## 🏃‍♂️ Development
@@ -182,7 +278,7 @@ docker build -t summarizarr-frontend ./web
 docker run -d 
    -p 8081:8081 
   -v $(pwd)/data:/app/data 
-  -e AI_BACKEND=openai 
+  -e AI_PROVIDER=openai 
   -e OPENAI_API_KEY=your_key 
   summarizarr-backend
 ```

@@ -2,6 +2,7 @@ package openai
 
 import (
 	context "context"
+	"fmt"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -32,5 +33,16 @@ func (c *Client) Summarize(ctx context.Context, prompt string) (string, error) {
 		return "", err
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	// Validate response has choices before accessing
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("no response choices returned from AI provider")
+	}
+
+	// Validate choice has content
+	choice := resp.Choices[0]
+	if choice.Message.Content == "" {
+		return "", fmt.Errorf("empty response content from AI provider")
+	}
+
+	return choice.Message.Content, nil
 }

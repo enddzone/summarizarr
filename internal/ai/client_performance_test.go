@@ -245,7 +245,7 @@ func TestPerformanceRegression_ConcurrentAccess(t *testing.T) {
 	summary := "## Header\n- Content"
 
 	done := make(chan bool)
-	
+
 	// Start multiple goroutines
 	for i := 0; i < 10; i++ {
 		go func() {
