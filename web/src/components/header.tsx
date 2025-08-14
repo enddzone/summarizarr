@@ -54,7 +54,7 @@ export function Header({
               alt="Summarizarr Logo"
               width={96}
               height={96}
-              className="hidden sm:block w-12 sm:w-14 md:w-16 lg:w-20 xl:w-28 h-12 sm:h-14 md:h-16 lg:h-20 xl:h-28 object-contain mt-2 sm:mt-3 md:mt-4 md:-mr-4 md:-ml-4 -mr-1 sm:-mr-1 md:-mr-2 lg:-mr-6"
+              className="hidden sm:block w-12 sm:w-14 md:w-16 lg:w-20 xl:w-28 h-12 sm:h-14 md:h-16 lg:h-20 xl:h-28 object-contain mt-2 sm:mt-3 md:mt-4 -mr-1 sm:-mr-1 md:-mr-2 lg:-mr-6 md:-ml-4 md:-mr-4"
             />
             <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold tracking-tight min-w-0 md:ml-2">
               <span className="text-primary">SUMMARI</span>
@@ -163,7 +163,7 @@ export function Header({
                 onClick={() => setTheme(theme === "light" ? "dark" : "light")}
               >
                 <Sun className="h-4 w-4 mr-2 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-4 w-4 mr-2 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                 Toggle Theme
               </DropdownMenuItem>
             </DropdownMenuContent>
