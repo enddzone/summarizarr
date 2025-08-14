@@ -1,26 +1,34 @@
-'use client'
+"use client";
 
-import Image from 'next/image'
-import { Moon, Sun, LayoutGrid, List, ArrowUpDown, Download, Settings } from 'lucide-react'
-import { useTheme } from 'next-themes'
-import { Button } from '@/components/ui/button'
+import Image from "next/image";
+import {
+  Moon,
+  Sun,
+  LayoutGrid,
+  List,
+  ArrowUpDown,
+  Download,
+  Settings,
+} from "lucide-react";
+import { useTheme } from "next-themes";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Badge } from '@/components/ui/badge'
-import type { ViewMode, SortOrder, SignalConfig } from '@/types'
+} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import type { ViewMode, SortOrder, SignalConfig } from "@/types";
 
 interface HeaderProps {
-  viewMode: ViewMode
-  onViewModeChange: (mode: ViewMode) => void
-  sortOrder: SortOrder
-  onSortOrderChange: (order: SortOrder) => void
-  onExport: () => void
-  onSignalSetup: () => void
-  signalConfig: SignalConfig
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
+  sortOrder: SortOrder;
+  onSortOrderChange: (order: SortOrder) => void;
+  onExport: () => void;
+  onSignalSetup: () => void;
+  signalConfig: SignalConfig;
 }
 
 export function Header({
@@ -32,22 +40,23 @@ export function Header({
   onSignalSetup,
   signalConfig,
 }: HeaderProps) {
-  const { setTheme, theme } = useTheme()
+  const { setTheme, theme } = useTheme();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4 flex h-16 items-center justify-between">
-        <div className="flex items-center space-x-1 sm:space-x-2 md:space-x-4 min-w-0 flex-1">
+        {/* Left side - pinned logo, title, and status badge */}
+        <div className="flex items-center space-x-2 sm:space-x-3 md:space-x-4 flex-shrink-0">
           <div className="flex items-center min-w-0">
-            {/* Responsive logo sizing - smaller on tablets, larger on desktop */}
+            {/* Logo visible on tablets and up with appropriate sizing */}
             <Image
               src="/main.svg"
               alt="Summarizarr Logo"
               width={96}
               height={96}
-              className="hidden md:block w-16 md:w-20 lg:w-28 h-16 md:h-20 lg:h-28 object-contain mt-3 md:mt-4 -mr-2 md:-mr-4 lg:-mr-6"
+              className="hidden sm:block w-12 sm:w-14 md:w-16 lg:w-20 xl:w-28 h-12 sm:h-14 md:h-16 lg:h-20 xl:h-28 object-contain mt-2 sm:mt-3 md:mt-4 -mr-1 sm:-mr-1 md:-mr-2 lg:-mr-6 md:-ml-4 md:-mr-4"
             />
-            <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold tracking-tight truncate">
+            <h1 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold tracking-tight min-w-0 md:ml-2">
               <span className="text-primary">SUMMARI</span>
               <span className="text-orange-600">ZARR</span>
             </h1>
@@ -60,7 +69,9 @@ export function Header({
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             )}
             <span className="hidden lg:inline">
-              {signalConfig.isRegistered ? "Signal Connected" : "Signal Not Connected"}
+              {signalConfig.isRegistered
+                ? "Signal Connected"
+                : "Signal Not Connected"}
             </span>
             <span className="lg:hidden">
               {signalConfig.isRegistered ? "Connected" : "Not Connected"}
@@ -68,22 +79,25 @@ export function Header({
           </Badge>
         </div>
 
+        {/* Spacer to push controls to the right */}
+        <div className="flex-1"></div>
+
         <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
           {/* View Mode Toggle - Hidden on mobile, show cards-only on small screens */}
           <div className="hidden sm:flex items-center border rounded-lg p-1">
             <Button
-              variant={viewMode === 'timeline' ? 'default' : 'ghost'}
+              variant={viewMode === "timeline" ? "default" : "ghost"}
               size="sm"
-              onClick={() => onViewModeChange('timeline')}
+              onClick={() => onViewModeChange("timeline")}
               className="px-2 sm:px-3"
             >
               <List className="h-4 w-4" />
               <span className="hidden sm:inline ml-1">Timeline</span>
             </Button>
             <Button
-              variant={viewMode === 'cards' ? 'default' : 'ghost'}
+              variant={viewMode === "cards" ? "default" : "ghost"}
               size="sm"
-              onClick={() => onViewModeChange('cards')}
+              onClick={() => onViewModeChange("cards")}
               className="px-2 sm:px-3"
             >
               <LayoutGrid className="h-4 w-4" />
@@ -97,16 +111,16 @@ export function Header({
               <Button variant="outline" size="sm" className="hidden sm:flex">
                 <ArrowUpDown className="h-4 w-4 mr-2" />
                 <span className="hidden lg:inline">
-                  {sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}
+                  {sortOrder === "newest" ? "Newest First" : "Oldest First"}
                 </span>
                 <span className="lg:hidden">Sort</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onSortOrderChange('newest')}>
+              <DropdownMenuItem onClick={() => onSortOrderChange("newest")}>
                 Newest First
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSortOrderChange('oldest')}>
+              <DropdownMenuItem onClick={() => onSortOrderChange("oldest")}>
                 Oldest First
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -120,10 +134,10 @@ export function Header({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onSortOrderChange('newest')}>
+              <DropdownMenuItem onClick={() => onSortOrderChange("newest")}>
                 Newest First
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onSortOrderChange('oldest')}>
+              <DropdownMenuItem onClick={() => onSortOrderChange("oldest")}>
                 Oldest First
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -145,9 +159,11 @@ export function Header({
                 <Settings className="h-4 w-4 mr-2" />
                 Signal Setup
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+              <DropdownMenuItem
+                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+              >
                 <Sun className="h-4 w-4 mr-2 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-4 w-4 mr-2 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                 Toggle Theme
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -171,7 +187,7 @@ export function Header({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
             >
               <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
@@ -181,5 +197,5 @@ export function Header({
         </div>
       </div>
     </header>
-  )
+  );
 }
