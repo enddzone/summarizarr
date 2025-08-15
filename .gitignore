@@ -16,3 +16,4 @@ web/.eslintcache
 web/.vscode
 plan.md
 web/coverage
+internal/frontend/static/

@@ -1,0 +1,214 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Summarizarr
+            org.opencontainers.image.description=AI-powered Signal message summarizer
+            org.opencontainers.image.vendor=EnddZone
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
+
+      - name: Generate SLSA provenance
+        uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ steps.build.outputs.digest }}
+          registry-username: ${{ github.actor }}
+        secrets:
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create production compose file
+        run: |
+          cat > compose.yaml << 'EOF'
+          services:
+            signal-cli:
+              image: bbernhard/signal-cli-rest-api:latest
+              container_name: signal-cli
+              environment:
+                - MODE=json-rpc
+              ports:
+                - "8080:8080"
+              volumes:
+                - signal-cli-config:/home/.local/share/signal-cli
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:8080/v1/about"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+                start_period: 10s
+              restart: unless-stopped
+
+            summarizarr:
+              image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+              container_name: summarizarr
+              environment:
+                # Required
+                - SIGNAL_PHONE_NUMBER=${SIGNAL_PHONE_NUMBER}
+                - AI_PROVIDER=${AI_PROVIDER:-local}
+                
+                # AI Provider Configuration
+                - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+                - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+                - GROQ_API_KEY=${GROQ_API_KEY:-}
+                - GROQ_MODEL=${GROQ_MODEL:-llama-3.1-8b-instant}
+                - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+                - GEMINI_MODEL=${GEMINI_MODEL:-gemini-pro}
+                - CLAUDE_API_KEY=${CLAUDE_API_KEY:-}
+                - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-3-haiku-20240307}
+                
+                # Local AI (Ollama) Configuration
+                - LOCAL_MODEL=${LOCAL_MODEL:-llama3.2:1b}
+                - OLLAMA_HOST=${OLLAMA_HOST:-http://localhost:11434}
+                - OLLAMA_AUTO_DOWNLOAD=${OLLAMA_AUTO_DOWNLOAD:-true}
+                
+                # Application Configuration
+                - SUMMARIZATION_INTERVAL=${SUMMARIZATION_INTERVAL:-1h}
+                - DATABASE_PATH=/data/summarizarr.db
+                - SIGNAL_URL=http://signal-cli:8080
+                - LOG_LEVEL=${LOG_LEVEL:-info}
+              ports:
+                - "8081:8080"
+              volumes:
+                - summarizarr-data:/data
+                - summarizarr-config:/config
+              depends_on:
+                signal-cli:
+                  condition: service_healthy
+              healthcheck:
+                test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+                interval: 30s
+                timeout: 10s
+                retries: 3
+                start_period: 30s
+              restart: unless-stopped
+
+          volumes:
+            signal-cli-config:
+            summarizarr-data:
+            summarizarr-config:
+          EOF
+
+      - name: Create environment template
+        run: |
+          cat > .env.example << 'EOF'
+          # Required Configuration
+          SIGNAL_PHONE_NUMBER=+1234567890
+          AI_PROVIDER=local
+
+          # OpenAI Configuration (when AI_PROVIDER=openai)
+          OPENAI_API_KEY=sk-your-openai-api-key-here
+          OPENAI_MODEL=gpt-4o-mini
+
+          # Groq Configuration (when AI_PROVIDER=groq)
+          GROQ_API_KEY=your-groq-api-key-here
+          GROQ_MODEL=llama-3.1-8b-instant
+
+          # Gemini Configuration (when AI_PROVIDER=gemini)
+          GEMINI_API_KEY=your-gemini-api-key-here
+          GEMINI_MODEL=gemini-pro
+
+          # Claude Configuration (when AI_PROVIDER=claude)
+          CLAUDE_API_KEY=your-claude-api-key-here
+          CLAUDE_MODEL=claude-3-haiku-20240307
+
+          # Local AI Configuration (when AI_PROVIDER=local)
+          LOCAL_MODEL=llama3.2:1b
+          OLLAMA_HOST=http://localhost:11434
+          OLLAMA_AUTO_DOWNLOAD=true
+
+          # Application Settings
+          SUMMARIZATION_INTERVAL=1h
+          LOG_LEVEL=info
+          EOF
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            # Extract changes for current version from CHANGELOG.md
+            sed -n "/^## \[${GITHUB_REF_NAME#v}\]/,/^## \[/p" CHANGELOG.md | head -n -1 > current_changes.md
+          else
+            # Generate basic changelog from commit messages
+            echo "## Changes" > current_changes.md
+            git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> current_changes.md 2>/dev/null || echo "- Initial release" >> current_changes.md
+          fi
+          
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat current_changes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: |
+            compose.yaml
+            .env.example
+          generate_release_notes: true
+          make_latest: true
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          short-description: "AI-powered Signal message summarizer"
+        continue-on-error: true

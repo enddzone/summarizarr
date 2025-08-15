@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"summarizarr/internal/database"
+	"summarizarr/internal/version"
 	"time"
 )
 
@@ -19,7 +22,7 @@ type Server struct {
 }
 
 // NewServer creates a new API server.
-func NewServer(addr string, db *sql.DB) *Server {
+func NewServer(addr string, db *sql.DB, frontendFS fs.FS) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
 		db: &database.DB{DB: db},
@@ -29,24 +32,34 @@ func NewServer(addr string, db *sql.DB) *Server {
 		},
 	}
 
-	mux.HandleFunc("/summaries", s.handleGetSummaries)
-	mux.HandleFunc("/summaries/", s.handleDeleteSummary) // DELETE /summaries/{id}
-	mux.HandleFunc("/groups", s.handleGetGroups)
-	mux.HandleFunc("/export", s.handleExport)
-	mux.HandleFunc("/signal/config", s.handleSignalConfig)
+	// API routes
+	mux.HandleFunc("/api/summaries", s.handleGetSummaries)
+	mux.HandleFunc("/api/summaries/", s.handleDeleteSummary) // DELETE /api/summaries/{id}
+	mux.HandleFunc("/api/groups", s.handleGetGroups)
+	mux.HandleFunc("/api/export", s.handleExport)
+	mux.HandleFunc("/api/signal/config", s.handleSignalConfig)
+	mux.HandleFunc("/api/signal/register", s.handleSignalRegister)
+	mux.HandleFunc("/api/signal/status", s.handleSignalStatus)
+	mux.HandleFunc("/api/version", s.handleVersion)
+	mux.HandleFunc("/health", s.handleHealth)
+
+	// Frontend static files
+	if frontendFS != nil {
+		mux.Handle("/", s.serveFrontend(frontendFS))
+	}
 
 	return s
 }
 
-// handleDeleteSummary handles DELETE /summaries/{id}
+// handleDeleteSummary handles DELETE /api/summaries/{id}
 func (s *Server) handleDeleteSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.NotFound(w, r)
 		return
 	}
-	// Expected path: /summaries/{id}
+	// Expected path: /api/summaries/{id}
 	// Trim prefix and extract the id
-	idStr := r.URL.Path[len("/summaries/"):]
+	idStr := r.URL.Path[len("/api/summaries/"):]
 	if idStr == "" {
 		http.Error(w, "missing id", http.StatusBadRequest)
 		return
@@ -90,14 +103,16 @@ func (s *Server) handleGetSummaries(w http.ResponseWriter, r *http.Request) {
 	groups := params.Get("groups")
 	startTimeStr := params.Get("start_time")
 	endTimeStr := params.Get("end_time")
+	sort := params.Get("sort")
 
 	slog.Debug("About to call GetSummariesWithFilters",
 		"search", search,
 		"groups", groups,
 		"start_time", startTimeStr,
-		"end_time", endTimeStr)
+		"end_time", endTimeStr,
+		"sort", sort)
 
-	summaries, err := s.db.GetSummariesWithFilters(search, groups, startTimeStr, endTimeStr)
+	summaries, err := s.db.GetSummariesWithFilters(search, groups, startTimeStr, endTimeStr, sort)
 	slog.Debug("GetSummariesWithFilters returned", "summariesLength", len(summaries), "error", err)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "Failed to get summaries", "error", err)
@@ -249,13 +264,28 @@ func (s *Server) handleSignalConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Get phone number from environment
 	phoneNumber := os.Getenv("SIGNAL_PHONE_NUMBER")
+	
+	// Check if the phone number is actually registered with Signal CLI
+	isRegistered := false
+	status := "Signal CLI not configured"
+	connected := false
+	
+	if phoneNumber != "" {
+		isRegistered = s.checkSignalRegistration(phoneNumber)
+		if isRegistered {
+			status = "Signal CLI registered and ready"
+			connected = true
+		} else {
+			status = "Signal CLI connected but phone number not registered"
+			connected = true
+		}
+	}
 
-	// For now, return a simple status - this could be enhanced to check actual Signal connection
 	response := signalConfigResponse{
-		Connected:    true,
-		Status:       "Signal CLI connected",
+		Connected:    connected,
+		Status:       status,
 		PhoneNumber:  phoneNumber,
-		IsRegistered: phoneNumber != "", // Consider registered if phone number is set
+		IsRegistered: isRegistered,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -265,5 +295,243 @@ func (s *Server) handleSignalConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.InfoContext(r.Context(), "Successfully returned signal config")
+	slog.InfoContext(r.Context(), "Successfully returned signal config", "isRegistered", isRegistered)
+}
+
+// checkSignalRegistration checks if a phone number is registered with Signal CLI
+func (s *Server) checkSignalRegistration(phoneNumber string) bool {
+	signalURL := os.Getenv("SIGNAL_URL")
+	if signalURL == "" {
+		signalURL = "localhost:8080"
+	}
+	
+	// Try to get the list of registered accounts from Signal CLI
+	url := fmt.Sprintf("http://%s/v1/accounts", signalURL)
+	resp, err := http.Get(url)
+	if err != nil {
+		slog.Error("Failed to check Signal CLI accounts", "error", err, "url", url)
+		return false
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		slog.Error("Signal CLI accounts check returned non-200 status", "status", resp.StatusCode, "url", url)
+		return false
+	}
+	
+	var accounts []string
+	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
+		slog.Error("Failed to decode Signal CLI accounts response", "error", err)
+		return false
+	}
+	
+	// Check if our phone number is in the list of registered accounts
+	for _, account := range accounts {
+		if account == phoneNumber {
+			slog.Info("Phone number found in registered accounts", "phoneNumber", phoneNumber)
+			return true
+		}
+	}
+	
+	slog.Info("Phone number not found in registered accounts", "phoneNumber", phoneNumber, "registeredAccounts", accounts)
+	return false
+}
+
+// handleSignalRegister handles registration flow for Signal
+func (s *Server) handleSignalRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+
+	slog.InfoContext(r.Context(), "Handling POST /signal/register request")
+
+	type registerRequest struct {
+		PhoneNumber string `json:"phoneNumber"`
+	}
+
+	type registerResponse struct {
+		QrCodeUrl    string `json:"qrCodeUrl,omitempty"`
+		IsRegistered bool   `json:"isRegistered"`
+		Message      string `json:"message"`
+	}
+
+	var req registerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to decode register request", "error", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.PhoneNumber == "" {
+		http.Error(w, "phoneNumber is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get Signal CLI URL
+	signalURL := os.Getenv("SIGNAL_URL")
+	if signalURL == "" {
+		signalURL = "localhost:8080"
+	}
+
+	// Check if already registered first
+	if s.checkSignalRegistration(req.PhoneNumber) {
+		response := registerResponse{
+			IsRegistered: true,
+			Message:      "Phone number is already registered",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Generate QR code for device linking (recommended approach)
+	// Use localhost:8080 for QR code URL so it's accessible from browser
+	qrURL := "http://localhost:8080/v1/qrcodelink?device_name=summarizarr"
+	
+	response := registerResponse{
+		QrCodeUrl:    qrURL,
+		IsRegistered: false,
+		Message:      "Scan QR code with Signal to link device",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to encode register response", "error", err)
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+
+	slog.InfoContext(r.Context(), "Generated QR code for Signal registration", "phoneNumber", req.PhoneNumber)
+}
+
+// handleSignalStatus checks Signal registration status
+func (s *Server) handleSignalStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	slog.InfoContext(r.Context(), "Handling GET /signal/status request")
+
+	type statusResponse struct {
+		IsRegistered bool   `json:"isRegistered"`
+		PhoneNumber  string `json:"phoneNumber"`
+		Message      string `json:"message"`
+	}
+
+	phoneNumber := os.Getenv("SIGNAL_PHONE_NUMBER")
+	isRegistered := false
+	message := "Phone number not configured"
+
+	if phoneNumber != "" {
+		isRegistered = s.checkSignalRegistration(phoneNumber)
+		if isRegistered {
+			message = "Phone number is registered and ready"
+		} else {
+			message = "Phone number not registered with Signal CLI"
+		}
+	}
+
+	response := statusResponse{
+		IsRegistered: isRegistered,
+		PhoneNumber:  phoneNumber,
+		Message:      message,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to encode status response", "error", err)
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+
+	slog.InfoContext(r.Context(), "Successfully returned Signal status", "isRegistered", isRegistered)
+}
+
+// handleVersion returns version information
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	versionInfo := version.Get()
+	
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(versionInfo); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to encode version response", "error", err)
+		http.Error(w, "failed to encode version response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleHealth returns health status for container health checks
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	response := map[string]interface{}{
+		"status":    "healthy",
+		"timestamp": time.Now().Unix(),
+		"service":   "summarizarr",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to encode health response", "error", err)
+		http.Error(w, "failed to encode health response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// serveFrontend creates a handler for serving frontend static files
+func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip API routes
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		path := r.URL.Path
+		if path == "/" {
+			path = "/index.html"
+		}
+
+		// Try to serve the exact file first
+		content, err := fs.ReadFile(frontendFS, strings.TrimPrefix(path, "/"))
+		if err != nil {
+			// If file not found, serve index.html for SPA routing
+			content, err = fs.ReadFile(frontendFS, "index.html")
+			if err != nil {
+				slog.ErrorContext(r.Context(), "Failed to read index.html", "error", err)
+				http.Error(w, "page not found", http.StatusNotFound)
+				return
+			}
+			// Set correct content type for HTML
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		} else {
+			// Set appropriate content type based on file extension
+			if strings.HasSuffix(path, ".css") {
+				w.Header().Set("Content-Type", "text/css")
+			} else if strings.HasSuffix(path, ".js") {
+				w.Header().Set("Content-Type", "application/javascript")
+			} else if strings.HasSuffix(path, ".html") {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			} else if strings.HasSuffix(path, ".json") {
+				w.Header().Set("Content-Type", "application/json")
+			} else if strings.HasSuffix(path, ".png") {
+				w.Header().Set("Content-Type", "image/png")
+			} else if strings.HasSuffix(path, ".svg") {
+				w.Header().Set("Content-Type", "image/svg+xml")
+			} else if strings.HasSuffix(path, ".ico") {
+				w.Header().Set("Content-Type", "image/x-icon")
+			}
+		}
+
+		w.Write(content)
+	})
 }

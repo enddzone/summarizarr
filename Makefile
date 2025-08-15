@@ -23,7 +23,7 @@ help: ## Show this help message
 
 signal: ## Start signal-cli-rest-api container
 	@echo "$(YELLOW)Starting Signal CLI REST API container...$(NC)"
-	docker compose up -d signal-cli-rest-api
+	docker compose up -d signal-cli
 	@echo "$(GREEN)Signal container started on port 8080$(NC)"
 
 backend: ## Run Go backend locally (requires signal container)
@@ -42,23 +42,36 @@ all: signal ## Start all services locally (signal container + Go backend + Next.
 	@echo "$(GREEN)Starting backend and frontend in parallel...$(NC)"
 	@$(MAKE) -j2 backend frontend
 
-docker: ## Run full stack with docker compose
-	@echo "$(YELLOW)Starting full stack with Docker Compose...$(NC)"
-	docker compose up --build -d
-	@echo "$(GREEN)Full stack started. Frontend: http://localhost:3000, Backend: http://localhost:8081$(NC)"
+docker: ## Run development stack with docker compose
+	@echo "$(YELLOW)Starting development stack with Docker Compose...$(NC)"
+	docker compose -f compose.dev.yaml up --build -d
+	@echo "$(GREEN)Development stack started. Backend: http://localhost:8081$(NC)"
+	@echo "$(GREEN)Adminer (DB viewer): http://localhost:8083$(NC)"
+	@echo "$(GREEN)Dozzle (logs viewer): http://localhost:8084$(NC)"
+
+prod: ## Run production example stack with pre-built image
+	@echo "$(YELLOW)Starting production example stack...$(NC)"
+	docker compose -f compose.yaml up -d
+	@echo "$(GREEN)Production stack started. Backend: http://localhost:8081$(NC)"
 
 status: ## Show status of all services
 	@echo "$(YELLOW)Service Status:$(NC)"
 	@echo "Signal Container:"
-	@docker compose ps signal-cli-rest-api || echo "  $(RED)Not running$(NC)"
+	@docker compose -f compose.dev.yaml ps signal-cli 2>/dev/null || docker compose -f compose.yaml ps signal-cli 2>/dev/null || echo "  $(RED)Not running$(NC)"
+	@echo "Summarizarr Container:"
+	@docker compose -f compose.dev.yaml ps summarizarr 2>/dev/null || docker compose -f compose.yaml ps summarizarr 2>/dev/null || echo "  $(RED)Not running$(NC)"
 	@echo "Backend (Go):"
 	@curl -s http://localhost:8081/api/summaries > /dev/null && echo "  $(GREEN)Running on :8081$(NC)" || echo "  $(RED)Not running$(NC)"
 	@echo "Frontend (Next.js):"
 	@curl -s http://localhost:3000 > /dev/null && echo "  $(GREEN)Running on :3000$(NC)" || echo "  $(RED)Not running$(NC)"
+	@echo "Development Tools:"
+	@docker compose -f compose.dev.yaml ps adminer 2>/dev/null | grep -q "Up" && echo "  $(GREEN)Adminer (DB viewer) on :8083$(NC)" || echo "  $(RED)Adminer not running$(NC)"
+	@docker compose -f compose.dev.yaml ps dozzle 2>/dev/null | grep -q "Up" && echo "  $(GREEN)Dozzle (logs viewer) on :8084$(NC)" || echo "  $(RED)Dozzle not running$(NC)"
 
 stop: ## Stop all local services and containers
 	@echo "$(YELLOW)Stopping all services...$(NC)"
-	docker compose down
+	docker compose -f compose.dev.yaml down 2>/dev/null || true
+	docker compose -f compose.yaml down 2>/dev/null || true
 	@pkill -f "go run main.go" || true
 	@pkill -f "npm run dev" || true
 	@echo "$(GREEN)All services stopped$(NC)"
@@ -69,14 +82,15 @@ clean: stop ## Remove build artifacts and stop containers
 	rm -rf web/.next
 	rm -f summarizarr
 	rm -f summarizarr.db
-	docker compose down --volumes --remove-orphans
+	docker compose -f compose.dev.yaml down --volumes --remove-orphans 2>/dev/null || true
+	docker compose -f compose.yaml down --volumes --remove-orphans 2>/dev/null || true
 	@echo "$(GREEN)Cleanup complete$(NC)"
 
 logs: ## Show logs for all docker services
-	docker compose logs -f
+	@docker compose -f compose.dev.yaml logs -f 2>/dev/null || docker compose -f compose.yaml logs -f
 
 logs-signal: ## Show logs for signal-cli-rest-api
-	docker compose logs -f signal-cli-rest-api
+	@docker compose -f compose.dev.yaml logs -f signal-cli 2>/dev/null || docker compose -f compose.yaml logs -f signal-cli
 
 # Development helpers
 dev-setup: ## Initial setup for development
@@ -90,6 +104,19 @@ test-backend: ## Test Go backend
 
 test-frontend: ## Test Next.js frontend
 	cd web && npm test
+
+build-frontend: ## Build Next.js frontend and copy to internal/frontend/static/
+	@echo "$(YELLOW)Building Next.js frontend...$(NC)"
+	cd web && npm install && npm run build
+	@echo "$(YELLOW)Copying frontend build to internal/frontend/static/...$(NC)"
+	rm -rf internal/frontend/static/
+	cp -r web/out/ internal/frontend/static/
+	@echo "$(GREEN)Frontend build complete$(NC)"
+
+build: build-frontend ## Build the entire application (frontend + backend)
+	@echo "$(YELLOW)Building Go backend with embedded frontend...$(NC)"
+	go build -o summarizarr cmd/summarizarr/main.go
+	@echo "$(GREEN)Build complete: ./summarizarr$(NC)"
 
 # Claude Code hooks integration
 lint: ## Lint code (supports FILE= for specific files)
@@ -150,4 +177,4 @@ test: ## Run tests (supports FILE= for specific files)
 		cd web && npm test; \
 	fi
 
-.PHONY: help signal backend frontend all docker status stop clean logs logs-signal dev-setup test-backend test-frontend lint test
+.PHONY: help signal backend frontend all docker prod status stop clean logs logs-signal dev-setup test-backend test-frontend lint test
