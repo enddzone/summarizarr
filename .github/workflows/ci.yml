@@ -183,7 +183,7 @@ jobs:
         run: |
           # Run container with minimal environment
           docker run --rm -d --name test-container \
-            -p 8080:8080 \
+            -p 8081:8081 \
             -e AI_PROVIDER=local \
             -e SIGNAL_PHONE_NUMBER=+1234567890 \
             ${{ env.IMAGE_NAME }}:test
