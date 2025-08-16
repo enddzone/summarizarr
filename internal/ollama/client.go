@@ -26,8 +26,14 @@ type Client struct {
 
 // NewClient creates a new Ollama client
 func NewClient(host, model string) *Client {
+	// Handle host URL properly - don't add http:// if already present
+	baseURL := host
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		baseURL = fmt.Sprintf("http://%s", host)
+	}
+	
 	return &Client{
-		baseURL: fmt.Sprintf("http://%s", host),
+		baseURL: baseURL,
 		model:   model,
 		client: &http.Client{
 			Timeout: StandardClientTimeout, // Standardized timeout for model downloads and inference

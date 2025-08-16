@@ -5,12 +5,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Container](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/enddzone/summarizarr/pkgs/container/summarizarr)
 
-AI-powered Signal message summarizer in a single ~57MB container. Connects to Signal groups, stores messages in SQLite, and generates periodic AI summaries using local (Ollama) or cloud AI providers (OpenAI, Groq, Gemini, Claude).
+AI-powered Signal message summarizer in a single ~57MB container. Connects to Signal groups, stores messages in SQLite, and generates periodic AI summaries using local (Ollama sidecar) or cloud AI providers (OpenAI, Groq, Gemini, Claude).
 
 ## Features
 
 - **🐳 Single Container**: All-in-one deployment with embedded web UI
-- **🤖 Multi-Provider AI**: Local Ollama, OpenAI, Groq, Gemini, Claude support
+- **🤖 Multi-Provider AI**: Local Ollama sidecar, OpenAI, Groq, Gemini, Claude support
 - **🔒 Privacy-First**: Automatic data anonymization before AI processing
 - **📱 Signal Integration**: WebSocket connection to signal-cli-rest-api
 - **🌐 Modern UI**: Responsive Next.js interface with filtering and export
@@ -38,7 +38,7 @@ graph TB
     end
     
     subgraph "AI Providers"
-        LOCAL[🏠 Ollama<br/>Local AI]
+        LOCAL[🏠 Ollama<br/>Sidecar AI]
         OPENAI[🌐 OpenAI<br/>GPT-4]
         GROQ[⚡ Groq<br/>Fast Inference]
         GEMINI[🧠 Gemini<br/>via Proxy]
@@ -96,11 +96,18 @@ docker run -d \
 
 ## AI Provider Setup
 
-### Local AI (Default)
+### Local AI (Ollama Sidecar)
 ```bash
-# No configuration needed - uses Ollama with llama3.2:1b
-# Model downloads automatically on first use
+# 1. Start Ollama + pull model
+docker run -d -p 11434:11434 --name ollama ollama/ollama
+docker exec ollama ollama pull llama3.2:1b
+
+# 2. Configure Summarizarr
 AI_PROVIDER=local
+OLLAMA_HOST=http://localhost:11434
+
+# 3. With Docker Compose (recommended)
+COMPOSE_PROFILES=local-ai docker compose up -d
 ```
 
 ### Cloud Providers
