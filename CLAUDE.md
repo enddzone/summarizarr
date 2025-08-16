@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Summarizarr is an AI-powered Signal message summarizer that connects to Signal groups via WebSocket, stores messages in SQLite, and generates periodic AI summaries using multiple AI providers. Supports local AI (Ollama), cloud AI (OpenAI), and other OpenAI-compatible providers (Groq, Gemini via proxy, Claude via proxy). The application consists of a Go backend, Next.js frontend, and Signal CLI integration running as containerized services.
+Summarizarr is an AI-powered Signal message summarizer that connects to Signal groups via WebSocket, stores messages in SQLite, and generates periodic AI summaries using multiple AI providers. Supports local AI (Ollama sidecar), cloud AI (OpenAI), and other OpenAI-compatible providers (Groq, Gemini via proxy, Claude via proxy). The application consists of a Go backend, Next.js frontend, and Signal CLI integration running as containerized services.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 
 **AI Processing**: 
 - Unified AI client in `internal/ai/client.go` with multi-provider support
-- Supports local AI (Ollama) and multiple OpenAI-compatible providers
+- Supports local AI (Ollama sidecar) and multiple OpenAI-compatible providers
 - Provider-specific configuration with sensible defaults
 - Configurable scheduling via `internal/ai/scheduler.go` 
 - Centralized prompt management and anonymization
@@ -118,7 +118,7 @@ The Makefile automatically loads `.env` for local development.
 ### Multi-Provider Configuration
 
 **Provider Selection**: Use `AI_PROVIDER` to select between:
-- `local`: Ollama for local AI processing
+- `local`: Ollama sidecar for local AI processing
 - `openai`: OpenAI cloud API 
 - `groq`: Groq cloud API (native OpenAI compatibility)
 - `gemini`: Google Gemini via OpenAI-compatible proxy

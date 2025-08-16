@@ -14,10 +14,8 @@ type Config struct {
 	SignalURL             string
 	DatabasePath          string
 	LocalModel            string
-	OllamaAutoDownload    bool
 	OllamaKeepAlive       string
 	OllamaHost            string
-	ModelsPath            string
 	SummarizationInterval string
 
 	// Generic provider configuration
@@ -51,20 +49,12 @@ func New() *Config {
 		databasePath = "summarizarr.db" // default path
 	}
 
-	modelsPath := os.Getenv("MODELS_PATH")
-	if modelsPath == "" {
-		modelsPath = "./models" // default path
-	}
 
 	localModel := os.Getenv("LOCAL_MODEL")
 	if localModel == "" {
 		localModel = "llama3.2:1b" // default model - smaller memory footprint
 	}
 
-	ollamaAutoDownload := true
-	if val := os.Getenv("OLLAMA_AUTO_DOWNLOAD"); val == "false" {
-		ollamaAutoDownload = false
-	}
 
 	ollamaKeepAlive := os.Getenv("OLLAMA_KEEP_ALIVE")
 	if ollamaKeepAlive == "" {
@@ -148,10 +138,8 @@ func New() *Config {
 		SignalURL:             signalURL,
 		DatabasePath:          databasePath,
 		LocalModel:            localModel,
-		OllamaAutoDownload:    ollamaAutoDownload,
 		OllamaKeepAlive:       ollamaKeepAlive,
 		OllamaHost:            ollamaHost,
-		ModelsPath:            modelsPath,
 		SummarizationInterval: summarizationInterval,
 
 		AIProvider: aiProvider,
