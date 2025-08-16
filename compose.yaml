@@ -22,7 +22,8 @@ services:
     volumes:
       # WARNING: Using named volume - data will be lost if container is removed
       # For production: mount local directory instead: ./signal-cli-config:/home/.local/share/signal-cli
-      - signal-cli-config:/home/.local/share/signal-cli
+      # - signal-cli-config:/home/.local/share/signal-cli
+      - ./signal-cli-config:/home/.local/share/signal-cli
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/v1/about"]
       interval: 30s
@@ -62,14 +63,14 @@ services:
       - SIGNAL_URL=signal-cli:8080
       - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
-      - "8080:8080" # Unified API + frontend
+      - "8081:8080" # Unified API + frontend
     volumes:
       # WARNING: Using named volumes - data will be lost if containers are removed
       # For production: mount local directories instead:
-      #   - ./data:/data
-      #   - ./config:/config
-      - summarizarr-data:/data
-      - summarizarr-config:/config
+        - ./data:/data
+        - ./config:/config
+      # - summarizarr-data:/data
+      # - summarizarr-config:/config
     depends_on:
       signal-cli:
         condition: service_healthy
