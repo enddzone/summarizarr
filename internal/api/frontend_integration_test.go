@@ -14,7 +14,26 @@ import (
 // run `make build-frontend`) the test is skipped to avoid false negatives.
 func getEmbeddedStaticFS(t *testing.T) fs.FS {
 	t.Helper()
-	root := filepath.Join("internal", "frontend", "static")
+
+	// Find repository root by looking for go.mod
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	repoRoot := wd
+	for {
+		if _, err := os.Stat(filepath.Join(repoRoot, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(repoRoot)
+		if parent == repoRoot {
+			t.Fatalf("could not find repository root (go.mod not found)")
+		}
+		repoRoot = parent
+	}
+
+	root := filepath.Join(repoRoot, "internal", "frontend", "static")
 	if _, err := os.Stat(root); err != nil {
 		t.Skipf("static assets directory %s not present (run make build-frontend first): %v", root, err)
 	}
