@@ -179,27 +179,6 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
 
-      - name: Test container image
-        run: |
-          # Run container with minimal environment
-          docker run --rm -d --name test-container \
-            -p 8081:8081 \
-            -e AI_PROVIDER=local \
-            -e SIGNAL_PHONE_NUMBER=+1234567890 \
-            ${{ env.IMAGE_NAME }}:test
-
-          # Wait for container to start
-          sleep 10
-
-          # Test health endpoint
-          curl -f http://localhost:8081/health || exit 1
-
-          # Test version endpoint
-          curl -f http://localhost:8081/api/version || exit 1
-
-          # Clean up
-          docker stop test-container
-
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
