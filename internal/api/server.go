@@ -502,7 +502,16 @@ func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
 		}
 
 		// Try to serve the exact file first
-		content, err := fs.ReadFile(frontendFS, strings.TrimPrefix(path, "/"))
+		// Sanitize and validate the path to prevent directory traversal
+		cleanPath := path.Clean(strings.TrimPrefix(path, "/"))
+		// Disallow paths that escape the root (start with ".." or contain "/..")
+		if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || strings.Contains(cleanPath, "/..") {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Try to serve the exact file first
+		content, err := fs.ReadFile(frontendFS, cleanPath)
 		if err != nil {
 			// If file not found, serve index.html for SPA routing
 			content, err = fs.ReadFile(frontendFS, "index.html")
