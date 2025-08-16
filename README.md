@@ -1,590 +1,232 @@
-## Summarizarr
+# Summarizarr
 
 [![CI](https://github.com/enddzone/summarizarr/actions/workflows/ci.yml/badge.svg)](https://github.com/enddzone/summarizarr/actions/workflows/ci.yml)
-[![Container](https://ghcr.io/enddzone/summarizarr/badge.svg)](https://ghcr.io/enddzone/summarizarr)
+[![Release](https://github.com/enddzone/summarizarr/actions/workflows/release.yml/badge.svg)](https://github.com/enddzone/summarizarr/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Container](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/enddzone/summarizarr/pkgs/container/summarizarr)
 
-AI-powered Signal message summarizer delivered as a lightweight, single-container application. Summarizarr ingests Signal group messages, stores them in SQLite, and produces periodic summaries using multiple AI providers including local LLMs (Ollama) and cloud services (OpenAI, Groq, Gemini, Claude).
+AI-powered Signal message summarizer in a single ~57MB container. Connects to Signal groups, stores messages in SQLite, and generates periodic AI summaries using local (Ollama sidecar) or cloud AI providers (OpenAI, Groq, Gemini, Claude).
 
-## ✨ Key Highlights
+## Features
 
-- **Single Container**: ~57MB unified container with embedded frontend
-- **Multi-Provider AI**: Local (Ollama), OpenAI, Groq, Gemini, Claude support
-- **Signal Integration**: WebSocket connection to signal-cli-rest-api
-- **Privacy-First**: Automatic data anonymization before AI processing
-- **Modern UI**: Responsive Next.js interface with advanced filtering
-- **Production Ready**: Health checks, semantic versioning, automated CI/CD
+- **🐳 Single Container**: All-in-one deployment with embedded web UI
+- **🤖 Multi-Provider AI**: Local Ollama sidecar, OpenAI, Groq, Gemini, Claude support
+- **🔒 Privacy-First**: Automatic data anonymization before AI processing
+- **📱 Signal Integration**: WebSocket connection to signal-cli-rest-api
+- **🌐 Modern UI**: Responsive Next.js interface with filtering and export
+- **⚡ Production Ready**: Health checks, multi-arch builds, security scanning
 
-## 🚀 Features
+## Architecture
 
-### Container & Deployment
-- **Lightweight**: Sub-60MB Alpine-based container
-- **Single Port**: Unified HTTP server on port 8081
-- **Health Checks**: Built-in endpoint monitoring
-- **Multi-Arch**: Supports AMD64 and ARM64
-- **Security**: Non-root user, vulnerability scanning
-
-### AI & Processing
-- **Multi-Provider Support**: 5 AI backends with unified interface
-- **Smart Anonymization**: Names and data stripped before AI calls
-- **Scheduled Processing**: Configurable summarization intervals
-- **Local AI**: Self-hosted Ollama for privacy
-- **Cloud AI**: OpenAI, Groq with native compatibility
-
-### Web Interface
-- **Embedded Frontend**: No separate frontend deployment needed
-- **Advanced Filtering**: Multi-group, date range, text search
-- **Export Options**: JSON, CSV, PDF formats
-- **Responsive Design**: Mobile-optimized interface
-- **Real-time Updates**: Live summary refresh
-
-## 🏗️ Architecture
-
+```mermaid
+graph TB
+    subgraph "Signal Integration"
+        SC[Signal CLI REST API<br/>Port 8080]
+    end
+    
+    subgraph "Summarizarr Container"
+        subgraph "Backend (Go)"
+            WS[WebSocket Client]
+            API[HTTP Server<br/>Port 8081]
+            DB[(SQLite Database)]
+            SCHED[AI Scheduler]
+        end
+        
+        subgraph "Frontend"
+            UI[Embedded Next.js UI]
+        end
+    end
+    
+    subgraph "AI Providers"
+        LOCAL[🏠 Ollama<br/>Sidecar AI]
+        OPENAI[🌐 OpenAI<br/>GPT-4]
+        GROQ[⚡ Groq<br/>Fast Inference]
+        GEMINI[🧠 Gemini<br/>via Proxy]
+        CLAUDE[🤖 Claude<br/>via Proxy]
+    end
+    
+    SC -.->|WebSocket| WS
+    WS --> DB
+    SCHED --> DB
+    API --> DB
+    API --> UI
+    SCHED --> LOCAL
+    SCHED --> OPENAI
+    SCHED --> GROQ
+    SCHED --> GEMINI
+    SCHED --> CLAUDE
+    
+    style LOCAL fill:#e1f5fe
+    style OPENAI fill:#fff3e0
+    style GROQ fill:#f3e5f5
+    style GEMINI fill:#e8f5e8
+    style CLAUDE fill:#fce4ec
 ```
-┌─────────────────┐    ┌──────────────────────────────────────┐
-│   Signal CLI    │    │          Summarizarr                │
-│   REST API      │◄───┤    (Single Container)               │
-│   Port 8080     │    │                                     │
-└─────────────────┘    │  ┌─────────────┐  ┌────────────────┐ │
-                       │  │ Go Backend  │  │ Embedded       │ │
-         ┌──────────────┼──┤ Port 8081   │  │ Next.js        │ │
-         │              │  │ (API + UI)  │  │ Frontend       │ │
-         │              │  └─────────────┘  └────────────────┘ │
-         │              └──────────────────────────────────────┘
-         │                       │                       
-         │              ┌────────▼────────┐              
-         │              │   AI Backends   │              
-         │              │                 │              
-         │              │ • Ollama (Local)│
-         │              │ • OpenAI        │
-         └──────────────┤ • Groq          │
-                        │ • Gemini        │
-                        │ • Claude        │
-                        └─────────────────┘              
-```
 
-## 🚀 Quick Start
+## Quick Start
 
-### Option 1: Docker Compose (Recommended)
+### Docker Compose (Recommended)
 
 ```bash
-# 1. Create docker-compose.yml
+# 1. Download configuration
 curl -O https://raw.githubusercontent.com/enddzone/summarizarr/main/compose.yaml
-
-# 2. Create environment file
 curl -O https://raw.githubusercontent.com/enddzone/summarizarr/main/.env.example
 cp .env.example .env
 
-# 3. Configure your Signal phone number
-export SIGNAL_PHONE_NUMBER="+1234567890"  # Your number
+# 2. Configure Signal phone number
+# Edit the .env file and set your Signal phone number:
+# SIGNAL_PHONE_NUMBER=+1234567890
 
-# 4. Start services
+# 3. Start services
 docker compose up -d
+
+# 4. Access web UI: http://localhost:8081
 ```
 
-### Option 2: Single Container
+### Single Container
 
 ```bash
-# Pull latest image
-docker pull ghcr.io/enddzone/summarizarr:latest
-
-# Run with minimal configuration
 docker run -d \
   --name summarizarr \
-  -p 8080:8080 \
+  -p 8081:8081 \
   -e SIGNAL_PHONE_NUMBER="+1234567890" \
   -e AI_PROVIDER=local \
   -v summarizarr-data:/data \
   ghcr.io/enddzone/summarizarr:latest
 ```
 
-### Access Points
+## AI Provider Setup
 
-After deployment, access your application:
-
-- **Web Interface**: [http://localhost:8081](http://localhost:8081) (Docker Compose - backend with embedded frontend)
-- **Signal CLI**: [http://localhost:8080](http://localhost:8080) (Docker Compose - Signal WebSocket service)
-- **Health Check**: `/health` endpoint on the web interface port
-- **API Documentation**: `/api/version` for version info
-
-**Development mode** (using `make all`):
-- **Frontend Development**: [http://localhost:3000](http://localhost:3000) (Next.js dev server with hot reload)
-- **Backend API**: [http://localhost:8081](http://localhost:8081) (Go backend with embedded frontend)
-- **Signal CLI**: [http://localhost:8080](http://localhost:8080) (Signal WebSocket service)
-
-### Configure Signal
-
-1. Open the web interface
-2. Click "Setup Signal" to access the configuration wizard
-3. Follow the QR code registration process
-4. Verify your phone number
-
-### AI Provider Setup
-
-**Local AI (Default)**:
+### Local AI (Ollama Sidecar)
 ```bash
-# No configuration needed - uses Ollama with llama3.2:1b
-# Model downloads automatically on first use
-```
+# 1. Start Ollama + pull model
+docker run -d -p 11434:11434 --name ollama ollama/ollama
+docker exec ollama ollama pull llama3.2:1b
 
-**OpenAI**:
-```bash
-export AI_PROVIDER=openai
-export OPENAI_API_KEY=sk-your-key-here
-```
-
-**Groq (Fast)**:
-```bash
-export AI_PROVIDER=groq
-export GROQ_API_KEY=gsk-your-key-here
-```
-
-See [Configuration](#configuration) for all providers.
-
-## 🔧 Configuration
-
-### Environment Variables
-
-#### Core Configuration
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AI_PROVIDER` | `local` | AI provider: `local`, `openai`, `groq`, `gemini`, `claude` |
-| `SIGNAL_PHONE_NUMBER` | - | Phone number for Signal registration |
-| `DATABASE_PATH` | `/app/data/summarizarr.db` | SQLite database location |
-| `SUMMARIZATION_INTERVAL` | `12h` | How often to generate summaries (e.g., 30m, 1h, 6h) |
-| `LOG_LEVEL` | `INFO` | Logging level |
-
-#### Local AI (Ollama) Configuration
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOCAL_MODEL` | `llama3.2:1b` | Ollama model name |
-| `OLLAMA_HOST` | `127.0.0.1:11434` | Ollama server address |
-| `MODELS_PATH` | `./models` | Directory for Ollama models |
-
-#### OpenAI Configuration
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_API_KEY` | - | OpenAI API key (required when `AI_PROVIDER=openai`) |
-| `OPENAI_MODEL` | `gpt-4o` | OpenAI model name |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI API base URL |
-
-#### Groq Configuration
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GROQ_API_KEY` | - | Groq API key (required when `AI_PROVIDER=groq`) |
-| `GROQ_MODEL` | `llama3-8b-8192` | Groq model name |
-| `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | Groq API base URL |
-
-#### Gemini Configuration
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GEMINI_API_KEY` | - | Gemini API key (required when `AI_PROVIDER=gemini`) |
-| `GEMINI_MODEL` | `gemini-2.0-flash` | Gemini model name |
-| `GEMINI_BASE_URL` | `http://localhost:8000/hf/v1` | Gemini proxy base URL |
-
-#### Claude Configuration
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CLAUDE_API_KEY` | - | Claude API key (required when `AI_PROVIDER=claude`) |
-| `CLAUDE_MODEL` | `claude-3-sonnet` | Claude model name |
-| `CLAUDE_BASE_URL` | `http://localhost:8000/openai/v1` | Claude proxy base URL |
-
-### Multi-Provider Setup Examples
-
-#### OpenAI (Default Cloud Provider)
-```env
-AI_PROVIDER=openai
-OPENAI_API_KEY=sk-proj-xxxxx
-OPENAI_MODEL=gpt-4o
-# OPENAI_BASE_URL defaults to https://api.openai.com/v1
-```
-
-#### Groq (Fast Inference)
-```env
-AI_PROVIDER=groq
-GROQ_API_KEY=gsk_xxxxx
-GROQ_MODEL=llama3-8b-8192
-# GROQ_BASE_URL defaults to https://api.groq.com/openai/v1
-```
-
-#### Local Ollama (Default)
-```env
+# 2. Configure Summarizarr
 AI_PROVIDER=local
-LOCAL_MODEL=llama3.2:1b
-OLLAMA_HOST=127.0.0.1:11434
+OLLAMA_HOST=http://localhost:11434
+
+# 3. With Docker Compose (recommended)
+COMPOSE_PROFILES=local-ai docker compose up -d
 ```
 
-#### Gemini (Requires Proxy)
-```env
+### Cloud Providers
+```bash
+# OpenAI
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-your-key-here
+
+# Groq (fastest inference)
+AI_PROVIDER=groq
+GROQ_API_KEY=gsk-your-key-here
+
+# Gemini (requires proxy)
 AI_PROVIDER=gemini
-GEMINI_API_KEY=xxxxx
-GEMINI_MODEL=gemini-2.0-flash
-GEMINI_BASE_URL=http://localhost:8000/hf/v1  # Gemini Balance proxy
-```
+GEMINI_API_KEY=your-key-here
+GEMINI_BASE_URL=http://localhost:8000/hf/v1
 
-#### Claude (Requires Proxy)
-```env
+# Claude (requires proxy)  
 AI_PROVIDER=claude
-CLAUDE_API_KEY=sk-ant-xxxxx
-CLAUDE_MODEL=claude-3-sonnet
-CLAUDE_BASE_URL=http://localhost:8000/openai/v1  # OpenAI-compatible proxy
+CLAUDE_API_KEY=sk-ant-your-key-here
+CLAUDE_BASE_URL=http://localhost:8000/openai/v1
 ```
 
-#### Setting Up Proxy Services
-For Gemini and Claude, you'll need OpenAI-compatible proxy services:
+## Configuration
 
-**Gemini Balance Proxy**:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SIGNAL_PHONE_NUMBER` | - | **Required** Phone number for Signal |
+| `AI_PROVIDER` | `local` | AI provider: `local`, `openai`, `groq`, `gemini`, `claude` |
+| `SUMMARIZATION_INTERVAL` | `12h` | Summary frequency (30m, 1h, 6h, 1d) |
+| `DATABASE_PATH` | `/app/data/summarizarr.db` | SQLite database location |
+| `LOG_LEVEL` | `INFO` | Logging verbosity |
+
+See [full configuration reference](https://github.com/enddzone/summarizarr/blob/main/.env.example) for all provider-specific options.
+
+## Development
+
 ```bash
-# Install and run Gemini Balance (example)
-npm install -g @google-ai/gemini-balance
-gemini-balance --port 8000 --api-key YOUR_GEMINI_KEY
-```
-
-**Claude Proxy**:
-```bash
-# Use community proxy services or set up your own
-# Example: anthropic-openai-bridge
-docker run -p 8000:8000 -e ANTHROPIC_API_KEY=your_key anthropic-proxy
-```
-
-### Customizing Summarization
-Edit `docker-compose.yml` to adjust:
-- **Frequency**: Change `SUMMARIZATION_INTERVAL` (e.g., `30m`, `2h`, `1d`)
-- **AI Provider**: Switch between different providers and models
-- **Anonymization**: Toggle data anonymization features
-
-## 🏃‍♂️ Development
-
-### Quick Start (Recommended)
-```bash
-# Initial setup
+# Quick development setup
 make dev-setup
+make all          # Start Signal + Go backend + Next.js frontend
 
-# Start all services (Signal container + Go backend + Next.js frontend)
-make all
+# Service URLs
+# Frontend (dev): http://localhost:3000 - Hot reload
+# Backend API:    http://localhost:8081 - Embedded frontend  
+# Signal CLI:     http://localhost:8080 - WebSocket service
 
-# Check service status
-make status
+# Individual services
+make signal       # Signal container only
+make backend      # Go backend
+make frontend     # Next.js with hot reload
 
-# Stop all services
+# Testing
+make test-backend
+make test-frontend
+
+# Stop all
 make stop
 ```
 
-**Service URLs:**
-- Frontend (Development): http://localhost:3000 - Hot reload enabled
-- Backend API: http://localhost:8081 - Backend with embedded frontend  
-- Signal CLI: http://localhost:8080 - Signal WebSocket service
+## API Endpoints
 
-### Individual Services
-```bash
-# Signal container only
-make signal
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Web interface |
+| `GET` | `/health` | Health check |
+| `GET` | `/api/version` | Version info |
+| `GET` | `/api/summaries` | List summaries (with filters) |
+| `GET` | `/api/groups` | List Signal groups |
+| `GET` | `/api/export` | Export data (JSON/CSV) |
+| `DELETE` | `/api/summaries/{id}` | Delete summary |
 
-# Backend (blocking)
-make backend
-# or background with PID management
-make backend-bg
+## Privacy & Security
 
-# Frontend (blocking)  
-make frontend
-# or background with API proxying
-make frontend-bg
-```
+- **Automatic anonymization** of names and phone numbers before AI processing
+- **Local data storage** in SQLite database
+- **Non-root container** execution
+- **Vulnerability scanning** with Trivy
+- **No external data** sent without anonymization
 
-### Manual Development
-```bash
-# Backend Development
-go mod download
-go run cmd/summarizarr/main.go
-
-# Frontend Development
-cd web && npm install
-cd web && npm run dev  # Port 3000 with API proxying
-
-# Build
-go build -o summarizarr ./cmd/summarizarr
-cd web && npm run build
-```
-
-### Testing
-```bash
-# Backend tests
-go test ./...
-make test-backend
-
-# Frontend tests
-cd web && npm test
-make test-frontend
-
-# Integration via Docker
-make docker
-```
-
-## 📚 API Reference
-
-### Core Endpoints
-- `GET /` - Web interface (embedded frontend)
-- `GET /health` - Health check for containers
-- `GET /api/version` - Version and build information
-
-### Data Endpoints
-- `GET /api/summaries` - Fetch summaries with optional filters
-- `DELETE /api/summaries/{id}` - Delete specific summary
-- `GET /api/groups` - List available Signal groups
-- `GET /api/export` - Export summaries in various formats
-- `GET /api/signal/config` - Signal configuration status
-
-### Query Parameters
-- `groups`: Filter by group IDs (comma-separated)
-- `start_time`: Start date (ISO 8601)
-- `end_time`: End date (ISO 8601)
-- `search`: Full-text search query
-- `format`: Export format (`json`, `csv`)
-
-### Health Check Response
-```json
-{
-  "status": "healthy",
-  "timestamp": 1703123456,
-  "service": "summarizarr"
-}
-```
-
-### Version Response
-```json
-{
-  "version": "v0.1.0",
-  "git_commit": "abc123def456",
-  "build_time": "2024-01-01T12:00:00Z",
-  "go_version": "go1.24.0"
-}
-```
-
-## 🔐 Privacy & Security
-
-### Data Anonymization
-Summarizarr automatically anonymizes data before sending to AI services:
-- **Phone Numbers**: Replaced with generic identifiers
-- **Names**: Replaced with role-based placeholders
-- **Personal Information**: Stripped from message content
-- **Group Names**: Anonymized while preserving context
-
-### Local Data Storage
-- Messages stored locally in SQLite database
-- Configurable data retention policies
-- No data sent to external services without anonymization
-
-## 🐳 Production Deployment
+## Production Deployment
 
 ### Container Registry
 ```bash
-# Pull from GitHub Container Registry
+# Latest version
 docker pull ghcr.io/enddzone/summarizarr:latest
 
-# Or specific version
-docker pull ghcr.io/enddzone/summarizarr:v0.1.0
+# Specific version
+docker pull ghcr.io/enddzone/summarizarr:v1.0.0
 ```
 
-### Docker Compose (Recommended)
+### Health Monitoring
 ```bash
-# Production deployment with all services
-docker compose up -d
-
-# With specific profiles
-docker compose --profile production up -d
-```
-
-### Kubernetes Deployment
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: summarizarr
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: summarizarr
-  template:
-    metadata:
-      labels:
-        app: summarizarr
-    spec:
-      containers:
-      - name: summarizarr
-        image: ghcr.io/enddzone/summarizarr:latest
-        ports:
-        - containerPort: 8080
-        env:
-        - name: SIGNAL_PHONE_NUMBER
-          value: "+1234567890"
-        - name: AI_PROVIDER
-          value: "openai"
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: summarizarr-secrets
-              key: openai-api-key
-        volumeMounts:
-        - name: data
-          mountPath: /data
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: summarizarr-data
-```
-
-### Environment-Specific Configurations
-
-**Development**:
-```bash
-# Local development with Docker Compose
-make docker  # Uses compose.dev.yaml
-
-# or manually:
-docker compose -f compose.dev.yaml up --build -d
-```
-
-**Production with SSL**:
-```bash
-# Add reverse proxy (nginx, traefik, etc.)
-# Handle SSL termination
-# Configure monitoring
-```
-
-### Monitoring & Observability
-```bash
-# Health check endpoint (Docker Compose)
+# Health check
 curl http://localhost:8081/health
 
-# Version information (Docker Compose)
+# Version info
 curl http://localhost:8081/api/version
-
-# For development mode (local)
-curl http://localhost:8081/health  # Backend
-curl http://localhost:3000/api/version  # Frontend with API proxy
 
 # Container logs
 docker logs summarizarr
-
-# Resource usage
-docker stats summarizarr
 ```
 
-## 🛠️ Troubleshooting
-
-### Common Issues
-
-1. **Signal Connection Failed**
-   ```bash
-   # Check Signal CLI status
-   docker logs summarizarr-signal-cli-rest-api-1
-   
-   # Restart Signal service
-   docker compose restart signal-cli-rest-api
-   ```
-
-2. **AI Backend Not Responding**
-   ```bash
-   # For Ollama
-   curl http://localhost:11434/api/version
-   
-   # Check backend logs
-   docker logs summarizarr-summarizarr-backend-1
-   ```
-
-3. **Frontend Build Issues**
-   ```bash
-   # Clear build cache
-   cd web && rm -rf .next node_modules
-   npm install && npm run build
-   ```
-
-4. **Database Issues**
-   ```bash
-   # Check database permissions
-   ls -la data/
-   
-   # Reset database (⚠️ deletes all data)
-   rm data/summarizarr.db
-   docker compose restart summarizarr-backend
-   ```
-
-### Performance Optimization
-
-1. **Increase summarization frequency** for more responsive updates
-2. **Use local AI** for faster processing and privacy
-3. **Enable database indexes** for large message volumes
-4. **Configure log rotation** to manage disk space
-
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+2. Create feature branch: `git checkout -b feature/name`
+3. Commit changes: `git commit -m 'Add feature'`
+4. Push branch: `git push origin feature/name`
+5. Open Pull Request
 
-### Development Guidelines
-- Follow Go and TypeScript best practices
-- Add tests for new features
-- Update documentation
-- Ensure Docker builds succeed
+## License
 
-## 📄 License
+MIT License - see [LICENSE](LICENSE) file for details.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Acknowledgments
 
-## 🚀 Release Information
-
-### Versioning
-Summarizarr follows [Semantic Versioning](https://semver.org/):
-- **MAJOR**: Breaking changes
-- **MINOR**: New features, backward compatible  
-- **PATCH**: Bug fixes, improvements
-
-### Container Images
-- **Registry**: `ghcr.io/enddzone/summarizarr`
-- **Tags**: `latest`, `v1.x.x`, `sha-<commit>`
-- **Architectures**: linux/amd64, linux/arm64
-- **Size**: ~57MB (Alpine-based)
-
-### Automated Releases
-- CI/CD via GitHub Actions
-- Automatic image builds on version tags
-- Security scanning with Trivy
-- SLSA provenance attestation
-- Multi-architecture builds
-
-### Installation Methods
-1. **Docker Compose**: Production-ready with all dependencies
-2. **Single Container**: Minimal deployment
-3. **Kubernetes**: Enterprise container orchestration
-4. **Direct Download**: GitHub releases with assets
-
-## 🙏 Acknowledgments
-
-- [Signal CLI REST API](https://github.com/bbernhard/signal-cli-rest-api) for Signal integration
-- [Ollama](https://ollama.ai/) for local AI capabilities
-- [Next.js](https://nextjs.org/) for the modern web framework
-- [Shadcn/ui](https://ui.shadcn.com/) for beautiful UI components
-- [Docker](https://docker.com/) for containerization
-- [GitHub Actions](https://github.com/features/actions) for CI/CD automation
-
----
-
-**Container Distribution**: Get started with a single command  
-**Multi-Platform Support**: Runs on Intel and ARM architectures  
-**Production Ready**: Health checks, monitoring, and security built-in
+- [Signal CLI REST API](https://github.com/bbernhard/signal-cli-rest-api) - Signal integration
+- [Ollama](https://ollama.ai/) - Local AI capabilities
+- [Next.js](https://nextjs.org/) - Modern web framework
+- [Shadcn/ui](https://ui.shadcn.com/) - UI components

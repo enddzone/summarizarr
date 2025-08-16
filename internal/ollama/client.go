@@ -26,8 +26,14 @@ type Client struct {
 
 // NewClient creates a new Ollama client
 func NewClient(host, model string) *Client {
+	// Handle host URL properly - don't add http:// if http:// or https:// is already present (supports both http and https)
+	baseURL := host
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		baseURL = fmt.Sprintf("http://%s", host)
+	}
+
 	return &Client{
-		baseURL: fmt.Sprintf("http://%s", host),
+		baseURL: baseURL,
 		model:   model,
 		client: &http.Client{
 			Timeout: StandardClientTimeout, // Standardized timeout for model downloads and inference
@@ -60,20 +66,6 @@ type ChatCompletionResponse struct {
 	Done bool `json:"done"`
 }
 
-// PullRequest represents a model pull request
-type PullRequest struct {
-	Model  string `json:"model"`
-	Stream bool   `json:"stream"`
-}
-
-// PullResponse represents a model pull response
-type PullResponse struct {
-	Status    string `json:"status"`
-	Digest    string `json:"digest,omitempty"`
-	Total     int64  `json:"total,omitempty"`
-	Completed int64  `json:"completed,omitempty"`
-}
-
 // ListModelsResponse represents the response from listing models
 type ListModelsResponse struct {
 	Models []Model `json:"models"`
@@ -96,138 +88,6 @@ type ModelDetails struct {
 	Families          []string `json:"families"`
 	ParameterSize     string   `json:"parameter_size"`
 	QuantizationLevel string   `json:"quantization_level"`
-}
-
-// EnsureModel downloads the model if it doesn't exist locally
-func (c *Client) EnsureModel(ctx context.Context, autoDownload bool) error {
-	// First check if model exists
-	models, err := c.ListModels(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list models: %w", err)
-	}
-
-	// Check if our model is already available
-	for _, model := range models.Models {
-		if strings.Contains(model.Name, c.model) {
-			slog.InfoContext(ctx, "Model already available", "model", c.model)
-			return nil
-		}
-	}
-
-	if !autoDownload {
-		return fmt.Errorf("model %s not found and auto-download is disabled", c.model)
-	}
-
-	// Download the model
-	slog.InfoContext(ctx, "Model not found, downloading...", "model", c.model)
-	return c.PullModel(ctx, c.model)
-}
-
-// PullModel downloads a model from the Ollama registry with retry logic
-func (c *Client) PullModel(ctx context.Context, model string) error {
-	maxRetries := 3
-	var lastErr error
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			waitTime := time.Duration(attempt) * 30 * time.Second
-			slog.InfoContext(ctx, "Retrying model download", "attempt", attempt+1, "wait_seconds", int(waitTime.Seconds()))
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(waitTime):
-			}
-		}
-
-		lastErr = c.pullModelAttempt(ctx, model)
-		if lastErr == nil {
-			slog.InfoContext(ctx, "Model downloaded successfully", "model", model)
-			return nil
-		}
-
-		slog.WarnContext(ctx, "Model download attempt failed", "attempt", attempt+1, "error", lastErr)
-	}
-
-	return fmt.Errorf("failed to download model after %d attempts: %w", maxRetries, lastErr)
-}
-
-// pullModelAttempt performs a single attempt to download a model
-func (c *Client) pullModelAttempt(ctx context.Context, model string) error {
-	pullReq := PullRequest{
-		Model:  model,
-		Stream: true,
-	}
-
-	body, err := json.Marshal(pullReq)
-	if err != nil {
-		return fmt.Errorf("failed to marshal pull request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/pull", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create pull request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send pull request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("pull request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Process streaming response
-	decoder := json.NewDecoder(resp.Body)
-	var lastStatus string
-	var startTime = time.Now()
-
-	for {
-		var pullResp PullResponse
-		if err := decoder.Decode(&pullResp); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("failed to decode pull response: %w", err)
-		}
-
-		// Log progress for different phases
-		if pullResp.Status != lastStatus {
-			slog.InfoContext(ctx, "Model download progress", "status", pullResp.Status, "model", model)
-			lastStatus = pullResp.Status
-		}
-
-		// Log download progress with estimated time remaining
-		if pullResp.Total > 0 && pullResp.Completed > 0 {
-			progress := float64(pullResp.Completed) / float64(pullResp.Total) * 100
-			elapsed := time.Since(startTime)
-
-			var eta string
-			if progress > 0 {
-				totalEstimated := time.Duration(float64(elapsed) / (progress / 100))
-				remaining := totalEstimated - elapsed
-				eta = fmt.Sprintf("ETA: %v", remaining.Round(time.Second))
-			}
-
-			slog.InfoContext(ctx, "Download progress",
-				"model", model,
-				"percent", fmt.Sprintf("%.1f%%", progress),
-				"downloaded_mb", pullResp.Completed/1024/1024,
-				"total_mb", pullResp.Total/1024/1024,
-				"eta", eta)
-		}
-
-		// Check for success
-		if pullResp.Status == "success" {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("model download completed but success status not received")
 }
 
 // ListModels lists all available models
@@ -356,27 +216,85 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-// WarmupModel loads the model into memory by sending a simple chat completion request
-func (c *Client) WarmupModel(ctx context.Context) error {
-	slog.Info("Warming up model...", "model", c.model)
+// ValidateExternalOllama performs comprehensive readiness checks for the external Ollama server
+func (c *Client) ValidateExternalOllama(ctx context.Context) error {
+	slog.InfoContext(ctx, "Validating external Ollama server", "baseURL", c.baseURL, "model", c.model)
 
-	// Create a simple chat completion request to warm up the model
+	// Step 1: Check server connectivity
+	if err := c.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("ollama server not accessible at %s: %w\n\nTroubleshooting:\n- Ensure Ollama is running: 'ollama serve'\n- Check if port 11434 is accessible\n- Verify no firewall blocking connection", c.baseURL, err)
+	}
+
+	// Step 2: Verify model exists
+	if err := c.CheckModelExists(ctx, c.model); err != nil {
+		return fmt.Errorf("model validation failed: %w\n\nTroubleshooting:\n- Pull the model: 'ollama pull %s'\n- List available models: 'ollama list'\n- Check model name spelling", err, c.model)
+	}
+
+	// Step 3: Test model inference
+	if err := c.TestModelInference(ctx); err != nil {
+		return fmt.Errorf("model inference test failed: %w\n\nTroubleshooting:\n- Model may be corrupted, try: 'ollama pull %s'\n- Check available system resources (RAM/GPU)\n- Verify model is compatible with your system", err, c.model)
+	}
+
+	slog.InfoContext(ctx, "External Ollama validation successful", "model", c.model)
+	return nil
+}
+
+// CheckModelExists verifies that the specified model is available in the Ollama server
+func (c *Client) CheckModelExists(ctx context.Context, modelName string) error {
+	models, err := c.ListModels(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list models: %w", err)
+	}
+
+	// Check if our model is available
+	for _, model := range models.Models {
+		if strings.Contains(model.Name, modelName) {
+			slog.InfoContext(ctx, "Model found", "model", modelName, "size_mb", model.Size/1024/1024)
+			return nil
+		}
+	}
+
+	// Provide helpful error with available models
+	var availableModels []string
+	for _, model := range models.Models {
+		availableModels = append(availableModels, model.Name)
+	}
+
+	if len(availableModels) == 0 {
+		return fmt.Errorf("model '%s' not found and no models are available", modelName)
+	}
+
+	return fmt.Errorf("model '%s' not found. Available models: %s", modelName, strings.Join(availableModels, ", "))
+}
+
+// TestModelInference validates that the model can successfully process requests
+func (c *Client) TestModelInference(ctx context.Context) error {
+	slog.InfoContext(ctx, "Testing model inference", "model", c.model)
+
+	// Create a simple test request with a short timeout
+	testCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
 	chatReq := ChatCompletionRequest{
 		Model: c.model,
 		Messages: []ChatCompletionMessage{
 			{
 				Role:    "user",
-				Content: "Hello",
+				Content: "Say 'test'",
 			},
 		},
 		Stream: false,
 	}
 
-	_, err := c.performChatCompletion(ctx, chatReq)
+	response, err := c.performChatCompletion(testCtx, chatReq)
 	if err != nil {
-		return fmt.Errorf("model warmup failed: %w", err)
+		return fmt.Errorf("model inference test failed: %w", err)
 	}
 
-	slog.Info("Model warmed up successfully", "model", c.model)
+	if len(strings.TrimSpace(response)) == 0 {
+		return fmt.Errorf("model returned empty response")
+	}
+
+	slog.InfoContext(ctx, "Model inference test successful", "model", c.model, "response_length", len(response))
 	return nil
 }

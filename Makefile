@@ -156,7 +156,7 @@ build-frontend: ## Build Next.js frontend and copy to internal/frontend/static/
 
 build: build-frontend ## Build the entire application (frontend + backend)
 	@echo "$(YELLOW)Building Go backend with embedded frontend...$(NC)"
-	go build -o summarizarr cmd/summarizarr/main.go
+	GOARCH=$${GOARCH:-$$(go env GOARCH)} go build -o summarizarr cmd/summarizarr/main.go
 	@echo "$(GREEN)Build complete: ./summarizarr$(NC)"
 
 # Claude Code hooks integration

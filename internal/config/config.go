@@ -14,10 +14,8 @@ type Config struct {
 	SignalURL             string
 	DatabasePath          string
 	LocalModel            string
-	OllamaAutoDownload    bool
 	OllamaKeepAlive       string
 	OllamaHost            string
-	ModelsPath            string
 	SummarizationInterval string
 
 	// Generic provider configuration
@@ -51,19 +49,9 @@ func New() *Config {
 		databasePath = "summarizarr.db" // default path
 	}
 
-	modelsPath := os.Getenv("MODELS_PATH")
-	if modelsPath == "" {
-		modelsPath = "./models" // default path
-	}
-
 	localModel := os.Getenv("LOCAL_MODEL")
 	if localModel == "" {
 		localModel = "llama3.2:1b" // default model - smaller memory footprint
-	}
-
-	ollamaAutoDownload := true
-	if val := os.Getenv("OLLAMA_AUTO_DOWNLOAD"); val == "false" {
-		ollamaAutoDownload = false
 	}
 
 	ollamaKeepAlive := os.Getenv("OLLAMA_KEEP_ALIVE")
@@ -96,7 +84,7 @@ func New() *Config {
 	openaiAPIKey := os.Getenv("OPENAI_API_KEY")
 	openaiModel := os.Getenv("OPENAI_MODEL")
 	if openaiModel == "" {
-		openaiModel = "gpt-4o" // default model
+		openaiModel = "gpt-4o-mini" // default model
 	}
 	openaiBaseURL := os.Getenv("OPENAI_BASE_URL")
 	if openaiBaseURL == "" {
@@ -118,7 +106,7 @@ func New() *Config {
 	geminiAPIKey := os.Getenv("GEMINI_API_KEY")
 	geminiModel := os.Getenv("GEMINI_MODEL")
 	if geminiModel == "" {
-		geminiModel = "gemini-2.0-flash" // default model
+		geminiModel = "gemini-2.5-flash" // default model
 	}
 	geminiBaseURL := os.Getenv("GEMINI_BASE_URL")
 	if geminiBaseURL == "" {
@@ -129,7 +117,7 @@ func New() *Config {
 	claudeAPIKey := os.Getenv("CLAUDE_API_KEY")
 	claudeModel := os.Getenv("CLAUDE_MODEL")
 	if claudeModel == "" {
-		claudeModel = "claude-3-sonnet" // default model
+		claudeModel = "claude-3-5-haiku-latest" // default model
 	}
 	claudeBaseURL := os.Getenv("CLAUDE_BASE_URL")
 	if claudeBaseURL == "" {
@@ -148,10 +136,8 @@ func New() *Config {
 		SignalURL:             signalURL,
 		DatabasePath:          databasePath,
 		LocalModel:            localModel,
-		OllamaAutoDownload:    ollamaAutoDownload,
 		OllamaKeepAlive:       ollamaKeepAlive,
 		OllamaHost:            ollamaHost,
-		ModelsPath:            modelsPath,
 		SummarizationInterval: summarizationInterval,
 
 		AIProvider: aiProvider,
