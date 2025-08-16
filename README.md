@@ -74,7 +74,8 @@ curl -O https://raw.githubusercontent.com/enddzone/summarizarr/main/.env.example
 cp .env.example .env
 
 # 2. Configure Signal phone number
-echo "SIGNAL_PHONE_NUMBER=+1234567890" >> .env
+# Edit the .env file and set your Signal phone number:
+# SIGNAL_PHONE_NUMBER=+1234567890
 
 # 3. Start services
 docker compose up -d
