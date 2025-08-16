@@ -17,3 +17,8 @@ web/.vscode
 plan.md
 web/coverage
 internal/frontend/static/
+web/next.config.mjs.bak
+frontend.pid
+backend.pid
+frontend.log
+backend.log

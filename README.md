@@ -19,7 +19,7 @@ AI-powered Signal message summarizer delivered as a lightweight, single-containe
 
 ### Container & Deployment
 - **Lightweight**: Sub-60MB Alpine-based container
-- **Single Port**: Unified HTTP server on port 8080
+- **Single Port**: Unified HTTP server on port 8081
 - **Health Checks**: Built-in endpoint monitoring
 - **Multi-Arch**: Supports AMD64 and ARM64
 - **Security**: Non-root user, vulnerability scanning
@@ -47,7 +47,7 @@ AI-powered Signal message summarizer delivered as a lightweight, single-containe
 │   Port 8080     │    │                                     │
 └─────────────────┘    │  ┌─────────────┐  ┌────────────────┐ │
                        │  │ Go Backend  │  │ Embedded       │ │
-         ┌──────────────┼──┤ Port 8080   │  │ Next.js        │ │
+         ┌──────────────┼──┤ Port 8081   │  │ Next.js        │ │
          │              │  │ (API + UI)  │  │ Frontend       │ │
          │              │  └─────────────┘  └────────────────┘ │
          │              └──────────────────────────────────────┘
@@ -102,10 +102,15 @@ docker run -d \
 
 After deployment, access your application:
 
-- **Web Interface**: [http://localhost:8081](http://localhost:8081) (compose) or [http://localhost:8080](http://localhost:8080) (single)
-- **Signal CLI**: [http://localhost:8080](http://localhost:8080) (compose only)
-- **Health Check**: `/health` endpoint
+- **Web Interface**: [http://localhost:8081](http://localhost:8081) (Docker Compose - backend with embedded frontend)
+- **Signal CLI**: [http://localhost:8080](http://localhost:8080) (Docker Compose - Signal WebSocket service)
+- **Health Check**: `/health` endpoint on the web interface port
 - **API Documentation**: `/api/version` for version info
+
+**Development mode** (using `make all`):
+- **Frontend Development**: [http://localhost:3000](http://localhost:3000) (Next.js dev server with hot reload)
+- **Backend API**: [http://localhost:8081](http://localhost:8081) (Go backend with embedded frontend)
+- **Signal CLI**: [http://localhost:8080](http://localhost:8080) (Signal WebSocket service)
 
 ### Configure Signal
 
@@ -250,42 +255,69 @@ Edit `docker-compose.yml` to adjust:
 
 ## 🏃‍♂️ Development
 
-### Backend Development
+### Quick Start (Recommended)
 ```bash
-# Install Go dependencies
-go mod download
+# Initial setup
+make dev-setup
 
-# Run locally (reads .env)
+# Start all services (Signal container + Go backend + Next.js frontend)
+make all
+
+# Check service status
+make status
+
+# Stop all services
+make stop
+```
+
+**Service URLs:**
+- Frontend (Development): http://localhost:3000 - Hot reload enabled
+- Backend API: http://localhost:8081 - Backend with embedded frontend  
+- Signal CLI: http://localhost:8080 - Signal WebSocket service
+
+### Individual Services
+```bash
+# Signal container only
+make signal
+
+# Backend (blocking)
+make backend
+# or background with PID management
+make backend-bg
+
+# Frontend (blocking)  
+make frontend
+# or background with API proxying
+make frontend-bg
+```
+
+### Manual Development
+```bash
+# Backend Development
+go mod download
 go run cmd/summarizarr/main.go
+
+# Frontend Development
+cd web && npm install
+cd web && npm run dev  # Port 3000 with API proxying
 
 # Build
 go build -o summarizarr ./cmd/summarizarr
-```
-
-### Frontend Development
-```bash
-cd web
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
+cd web && npm run build
 ```
 
 ### Testing
 ```bash
 # Backend tests
 go test ./...
+make test-backend
 
 # Frontend tests
 cd web && npm test
+make test-frontend
 
-# Optional: Integration via Docker
-docker compose up --build -d
+# Integration via Docker
+make docker
 ```
 
 ## 📚 API Reference
@@ -418,7 +450,11 @@ spec:
 
 **Development**:
 ```bash
-docker compose -f compose.yaml -f compose.dev.yaml up
+# Local development with Docker Compose
+make docker  # Uses compose.dev.yaml
+
+# or manually:
+docker compose -f compose.dev.yaml up --build -d
 ```
 
 **Production with SSL**:
@@ -430,11 +466,15 @@ docker compose -f compose.yaml -f compose.dev.yaml up
 
 ### Monitoring & Observability
 ```bash
-# Health check endpoint
-curl http://localhost:8080/health
+# Health check endpoint (Docker Compose)
+curl http://localhost:8081/health
 
-# Version information
-curl http://localhost:8080/api/version
+# Version information (Docker Compose)
+curl http://localhost:8081/api/version
+
+# For development mode (local)
+curl http://localhost:8081/health  # Backend
+curl http://localhost:3000/api/version  # Frontend with API proxy
 
 # Container logs
 docker logs summarizarr

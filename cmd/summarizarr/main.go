@@ -128,7 +128,7 @@ func main() {
 		frontendFS = nil
 	}
 	
-	apiServer := api.NewServer(":8080", db.DB, frontendFS)
+	apiServer := api.NewServer(":8081", db.DB, frontendFS)
 
 	go apiServer.Start()
 

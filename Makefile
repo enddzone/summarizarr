@@ -23,7 +23,7 @@ help: ## Show this help message
 
 signal: ## Start signal-cli-rest-api container
 	@echo "$(YELLOW)Starting Signal CLI REST API container...$(NC)"
-	docker compose up -d signal-cli
+	docker compose -f compose.dev.yaml up -d signal-cli
 	@echo "$(GREEN)Signal container started on port 8080$(NC)"
 
 backend: ## Run Go backend locally (requires signal container)
@@ -31,19 +31,50 @@ backend: ## Run Go backend locally (requires signal container)
 	@if [ ! -f .env ]; then echo "$(RED)Warning: .env not found. Copy .env.example to .env$(NC)"; fi
 	go run cmd/summarizarr/main.go
 
+backend-bg: ## Run Go backend in background with local config
+	@echo "$(YELLOW)Starting Go backend in background...$(NC)"
+	@if [ ! -f .env ]; then echo "$(RED)Warning: .env not found. Copy .env.example to .env$(NC)"; fi
+	@export DATABASE_PATH=./data/summarizarr.db SIGNAL_URL=localhost:8080 && \
+	 nohup go run cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid
+	@echo "$(GREEN)Backend started in background (PID: $$(cat backend.pid))$(NC)"
+
 frontend: ## Run Next.js frontend locally with hot reload
 	@echo "$(YELLOW)Starting Next.js frontend with hot reload...$(NC)"
-	cd web && npm install && BACKEND_URL=http://localhost:8081 npm run dev
+	cd web && npm install && cp next.config.mjs next.config.mjs.bak && cp next.config.dev.mjs next.config.mjs && npm run dev
+
+frontend-bg: ## Run Next.js frontend in background
+	@echo "$(YELLOW)Starting Next.js frontend in background...$(NC)"
+	@cd web && cp next.config.mjs next.config.mjs.bak 2>/dev/null || true && cp next.config.dev.mjs next.config.mjs
+	@cd web && ( nohup npm run dev > ../frontend.log 2>&1 & echo $$! > ../frontend.pid )
+	@echo "$(GREEN)Frontend started in background (PID: $$(cat frontend.pid))$(NC)"
 
 all: signal ## Start all services locally (signal container + Go backend + Next.js frontend)
 	@echo "$(YELLOW)Starting all services for local development...$(NC)"
-	@echo "$(GREEN)Signal container will start first...$(NC)"
+	@echo "$(GREEN)Signal container started, waiting for readiness...$(NC)"
+	@sleep 5
+	@echo "$(GREEN)Starting backend with local database...$(NC)"
+	@$(MAKE) backend-bg
 	@sleep 3
-	@echo "$(GREEN)Starting backend and frontend in parallel...$(NC)"
-	@$(MAKE) -j2 backend frontend
+	@echo "$(GREEN)Starting frontend with hot reload...$(NC)"
+	@$(MAKE) frontend-bg
+	@sleep 3
+	@echo "$(GREEN)✓ All services started successfully!$(NC)"
+	@echo ""
+	@echo "🔗 Service URLs:"
+	@echo "   Backend:  http://localhost:8081"
+	@echo "   Frontend: http://localhost:3000"
+	@echo "   Signal:   http://localhost:8080"
+	@echo ""
+	@echo "📊 Database: Using existing data in ./data/summarizarr.db"
+	@echo "📱 Signal:   Using config in ./signal-cli-config/"
+	@echo ""
+	@echo "💡 Commands:"
+	@echo "   make status  - Check service health"
+	@echo "   make stop    - Stop all services"
+	@echo "   tail -f backend.log frontend.log - View logs"
 
-docker: ## Run development stack with docker compose
-	@echo "$(YELLOW)Starting development stack with Docker Compose...$(NC)"
+docker: ## Run development stack with docker compose (dev compose file)
+	@echo "$(YELLOW)Starting development stack with Docker Compose (compose.dev.yaml)...$(NC)"
 	docker compose -f compose.dev.yaml up --build -d
 	@echo "$(GREEN)Development stack started. Backend: http://localhost:8081$(NC)"
 	@echo "$(GREEN)Adminer (DB viewer): http://localhost:8083$(NC)"
@@ -54,12 +85,12 @@ prod: ## Run production example stack with pre-built image
 	docker compose -f compose.yaml up -d
 	@echo "$(GREEN)Production stack started. Backend: http://localhost:8081$(NC)"
 
-status: ## Show status of all services
+status: ## Show status of all services (dev compose only)
 	@echo "$(YELLOW)Service Status:$(NC)"
 	@echo "Signal Container:"
-	@docker compose -f compose.dev.yaml ps signal-cli 2>/dev/null || docker compose -f compose.yaml ps signal-cli 2>/dev/null || echo "  $(RED)Not running$(NC)"
+	@docker compose -f compose.dev.yaml ps signal-cli 2>/dev/null || echo "  $(RED)Not running$(NC)"
 	@echo "Summarizarr Container:"
-	@docker compose -f compose.dev.yaml ps summarizarr 2>/dev/null || docker compose -f compose.yaml ps summarizarr 2>/dev/null || echo "  $(RED)Not running$(NC)"
+	@docker compose -f compose.dev.yaml ps summarizarr 2>/dev/null || echo "  $(RED)Not running$(NC)"
 	@echo "Backend (Go):"
 	@curl -s http://localhost:8081/api/summaries > /dev/null && echo "  $(GREEN)Running on :8081$(NC)" || echo "  $(RED)Not running$(NC)"
 	@echo "Frontend (Next.js):"
@@ -68,29 +99,42 @@ status: ## Show status of all services
 	@docker compose -f compose.dev.yaml ps adminer 2>/dev/null | grep -q "Up" && echo "  $(GREEN)Adminer (DB viewer) on :8083$(NC)" || echo "  $(RED)Adminer not running$(NC)"
 	@docker compose -f compose.dev.yaml ps dozzle 2>/dev/null | grep -q "Up" && echo "  $(GREEN)Dozzle (logs viewer) on :8084$(NC)" || echo "  $(RED)Dozzle not running$(NC)"
 
-stop: ## Stop all local services and containers
+stop: ## Stop all local services and containers (dev compose only)
 	@echo "$(YELLOW)Stopping all services...$(NC)"
-	docker compose -f compose.dev.yaml down 2>/dev/null || true
-	docker compose -f compose.yaml down 2>/dev/null || true
-	@pkill -f "go run main.go" || true
-	@pkill -f "npm run dev" || true
-	@echo "$(GREEN)All services stopped$(NC)"
+	@# Stop background processes using PID files
+	@if [ -f backend.pid ]; then \
+		echo "Stopping backend (PID: $$(cat backend.pid))..."; \
+		kill $$(cat backend.pid) 2>/dev/null || true; \
+		rm -f backend.pid; \
+	fi
+	@if [ -f frontend.pid ]; then \
+		echo "Stopping frontend (PID: $$(cat frontend.pid))..."; \
+		kill $$(cat frontend.pid) 2>/dev/null || true; \
+		rm -f frontend.pid; \
+	fi
+	@# Stop Docker containers
+	@docker compose -f compose.dev.yaml down 2>/dev/null || true
+	@# Fallback: kill processes by name
+	@pkill -f "go run.*cmd/summarizarr/main.go" 2>/dev/null || true
+	@pkill -f "npm run dev" 2>/dev/null || true
+	@# Restore original Next.js config
+	@cd web && [ -f next.config.mjs.bak ] && mv next.config.mjs.bak next.config.mjs || true
+	@echo "$(GREEN)✓ All services stopped$(NC)"
 
 clean: stop ## Remove build artifacts and stop containers
 	@echo "$(YELLOW)Cleaning up build artifacts...$(NC)"
-	rm -rf web/node_modules
-	rm -rf web/.next
-	rm -f summarizarr
-	rm -f summarizarr.db
-	docker compose -f compose.dev.yaml down --volumes --remove-orphans 2>/dev/null || true
-	docker compose -f compose.yaml down --volumes --remove-orphans 2>/dev/null || true
-	@echo "$(GREEN)Cleanup complete$(NC)"
+	@rm -rf web/node_modules web/.next
+	@rm -f summarizarr backend.pid frontend.pid backend.log frontend.log
+	@rm -f web/next.config.mjs.bak
+	@docker compose -f compose.dev.yaml down --volumes --remove-orphans 2>/dev/null || true
+	@echo "$(GREEN)✓ Cleanup complete$(NC)"
+	@echo "$(YELLOW)Note: Database (./data/) and Signal config (./signal-cli-config/) preserved$(NC)"
 
-logs: ## Show logs for all docker services
-	@docker compose -f compose.dev.yaml logs -f 2>/dev/null || docker compose -f compose.yaml logs -f
+logs: ## Show logs for all docker services (dev compose only)
+	@docker compose -f compose.dev.yaml logs -f
 
-logs-signal: ## Show logs for signal-cli-rest-api
-	@docker compose -f compose.dev.yaml logs -f signal-cli 2>/dev/null || docker compose -f compose.yaml logs -f signal-cli
+logs-signal: ## Show logs for signal-cli-rest-api (dev compose only)
+	@docker compose -f compose.dev.yaml logs -f signal-cli
 
 # Development helpers
 dev-setup: ## Initial setup for development
