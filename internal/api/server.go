@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"summarizarr/internal/database"
 	"summarizarr/internal/version"
@@ -264,12 +265,12 @@ func (s *Server) handleSignalConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Get phone number from environment
 	phoneNumber := os.Getenv("SIGNAL_PHONE_NUMBER")
-	
+
 	// Check if the phone number is actually registered with Signal CLI
 	isRegistered := false
 	status := "Signal CLI not configured"
 	connected := false
-	
+
 	if phoneNumber != "" {
 		isRegistered = s.checkSignalRegistration(phoneNumber)
 		if isRegistered {
@@ -304,7 +305,7 @@ func (s *Server) checkSignalRegistration(phoneNumber string) bool {
 	if signalURL == "" {
 		signalURL = "localhost:8080"
 	}
-	
+
 	// Try to get the list of registered accounts from Signal CLI
 	url := fmt.Sprintf("http://%s/v1/accounts", signalURL)
 	resp, err := http.Get(url)
@@ -313,18 +314,18 @@ func (s *Server) checkSignalRegistration(phoneNumber string) bool {
 		return false
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("Signal CLI accounts check returned non-200 status", "status", resp.StatusCode, "url", url)
 		return false
 	}
-	
+
 	var accounts []string
 	if err := json.NewDecoder(resp.Body).Decode(&accounts); err != nil {
 		slog.Error("Failed to decode Signal CLI accounts response", "error", err)
 		return false
 	}
-	
+
 	// Check if our phone number is in the list of registered accounts
 	for _, account := range accounts {
 		if account == phoneNumber {
@@ -332,7 +333,7 @@ func (s *Server) checkSignalRegistration(phoneNumber string) bool {
 			return true
 		}
 	}
-	
+
 	slog.Info("Phone number not found in registered accounts", "phoneNumber", phoneNumber, "registeredAccounts", accounts)
 	return false
 }
@@ -388,7 +389,7 @@ func (s *Server) handleSignalRegister(w http.ResponseWriter, r *http.Request) {
 	// Generate QR code for device linking (recommended approach)
 	// Use localhost:8080 for QR code URL so it's accessible from browser
 	qrURL := "http://localhost:8080/v1/qrcodelink?device_name=summarizarr"
-	
+
 	response := registerResponse{
 		QrCodeUrl:    qrURL,
 		IsRegistered: false,
@@ -457,7 +458,7 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	versionInfo := version.Get()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(versionInfo); err != nil {
 		slog.ErrorContext(r.Context(), "Failed to encode version response", "error", err)
@@ -496,14 +497,14 @@ func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
 			return
 		}
 
-		path := r.URL.Path
-		if path == "/" {
-			path = "/index.html"
+		urlPath := r.URL.Path
+		if urlPath == "/" {
+			urlPath = "/index.html"
 		}
 
 		// Try to serve the exact file first
 		// Sanitize and validate the path to prevent directory traversal
-		cleanPath := path.Clean(strings.TrimPrefix(path, "/"))
+		cleanPath := path.Clean(strings.TrimPrefix(urlPath, "/"))
 		// Disallow paths that escape the root (start with ".." or contain "/..")
 		if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || strings.Contains(cleanPath, "/..") {
 			http.NotFound(w, r)
@@ -524,19 +525,19 @@ func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		} else {
 			// Set appropriate content type based on file extension
-			if strings.HasSuffix(path, ".css") {
+			if strings.HasSuffix(urlPath, ".css") {
 				w.Header().Set("Content-Type", "text/css")
-			} else if strings.HasSuffix(path, ".js") {
+			} else if strings.HasSuffix(urlPath, ".js") {
 				w.Header().Set("Content-Type", "application/javascript")
-			} else if strings.HasSuffix(path, ".html") {
+			} else if strings.HasSuffix(urlPath, ".html") {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			} else if strings.HasSuffix(path, ".json") {
+			} else if strings.HasSuffix(urlPath, ".json") {
 				w.Header().Set("Content-Type", "application/json")
-			} else if strings.HasSuffix(path, ".png") {
+			} else if strings.HasSuffix(urlPath, ".png") {
 				w.Header().Set("Content-Type", "image/png")
-			} else if strings.HasSuffix(path, ".svg") {
+			} else if strings.HasSuffix(urlPath, ".svg") {
 				w.Header().Set("Content-Type", "image/svg+xml")
-			} else if strings.HasSuffix(path, ".ico") {
+			} else if strings.HasSuffix(urlPath, ".ico") {
 				w.Header().Set("Content-Type", "image/x-icon")
 			}
 		}

@@ -127,8 +127,9 @@ func main() {
 		slog.Error("Failed to get frontend filesystem", "error", err)
 		frontendFS = nil
 	}
-	
-	apiServer := api.NewServer(":8081", db.DB, frontendFS)
+
+	// API server listen address is configurable via LISTEN_ADDR (default :8080)
+	apiServer := api.NewServer(cfg.ListenAddr, db.DB, frontendFS)
 
 	go apiServer.Start()
 

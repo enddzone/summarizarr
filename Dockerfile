@@ -28,7 +28,7 @@ RUN go mod download
 COPY . .
 
 # Copy frontend build output to embed location
-COPY --from=frontend-builder /app/web/out internal/api/frontend/
+COPY --from=frontend-builder /app/web/out internal/frontend/static/
 
 # Build static Go binary with version information
 ARG VERSION=dev

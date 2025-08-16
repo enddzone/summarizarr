@@ -27,14 +27,14 @@ signal: ## Start signal-cli-rest-api container
 	@echo "$(GREEN)Signal container started on port 8080$(NC)"
 
 backend: ## Run Go backend locally (requires signal container)
-	@echo "$(YELLOW)Starting Go backend locally...$(NC)"
+	@echo "$(YELLOW)Starting Go backend locally on :8081...$(NC)"
 	@if [ ! -f .env ]; then echo "$(RED)Warning: .env not found. Copy .env.example to .env$(NC)"; fi
-	go run cmd/summarizarr/main.go
+	LISTEN_ADDR=:8081 go run cmd/summarizarr/main.go
 
 backend-bg: ## Run Go backend in background with local config
-	@echo "$(YELLOW)Starting Go backend in background...$(NC)"
+	@echo "$(YELLOW)Starting Go backend in background on :8081...$(NC)"
 	@if [ ! -f .env ]; then echo "$(RED)Warning: .env not found. Copy .env.example to .env$(NC)"; fi
-	@export DATABASE_PATH=./data/summarizarr.db SIGNAL_URL=localhost:8080 && \
+	@export DATABASE_PATH=./data/summarizarr.db SIGNAL_URL=localhost:8080 LISTEN_ADDR=:8081 && \
 	 nohup go run cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid
 	@echo "$(GREEN)Backend started in background (PID: $$(cat backend.pid))$(NC)"
 
@@ -76,14 +76,14 @@ all: signal ## Start all services locally (signal container + Go backend + Next.
 docker: ## Run development stack with docker compose (dev compose file)
 	@echo "$(YELLOW)Starting development stack with Docker Compose (compose.dev.yaml)...$(NC)"
 	docker compose -f compose.dev.yaml up --build -d
-	@echo "$(GREEN)Development stack started. Backend: http://localhost:8081$(NC)"
+	@echo "$(GREEN)Development stack started. Backend: http://localhost:8080$(NC)"
 	@echo "$(GREEN)Adminer (DB viewer): http://localhost:8083$(NC)"
 	@echo "$(GREEN)Dozzle (logs viewer): http://localhost:8084$(NC)"
 
 prod: ## Run production example stack with pre-built image
 	@echo "$(YELLOW)Starting production example stack...$(NC)"
 	docker compose -f compose.yaml up -d
-	@echo "$(GREEN)Production stack started. Backend: http://localhost:8081$(NC)"
+	@echo "$(GREEN)Production stack started. Backend: http://localhost:8080$(NC)"
 
 status: ## Show status of all services (dev compose only)
 	@echo "$(YELLOW)Service Status:$(NC)"

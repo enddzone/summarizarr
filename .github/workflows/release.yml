@@ -65,15 +65,6 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
 
-      - name: Generate SLSA provenance
-        uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
-        with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          digest: ${{ steps.build.outputs.digest }}
-          registry-username: ${{ github.actor }}
-        secrets:
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create production compose file
         run: |
           cat > compose.yaml << 'EOF'
@@ -203,12 +194,3 @@ jobs:
             .env.example
           generate_release_notes: true
           make_latest: true
-
-      - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          short-description: "AI-powered Signal message summarizer"
-        continue-on-error: true

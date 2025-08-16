@@ -62,7 +62,7 @@ services:
       - SIGNAL_URL=signal-cli:8080
       - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
-      - "8081:8080"
+      - "8080:8080" # Unified API + frontend
     volumes:
       # WARNING: Using named volumes - data will be lost if containers are removed
       # For production: mount local directories instead:

@@ -9,6 +9,7 @@ import (
 // Config holds the application configuration.
 type Config struct {
 	LogLevel              slog.Level
+	ListenAddr            string
 	PhoneNumber           string
 	SignalURL             string
 	DatabasePath          string
@@ -135,8 +136,14 @@ func New() *Config {
 		claudeBaseURL = "https://api.anthropic.com/v1" // default Claude API URL
 	}
 
+	listenAddr := os.Getenv("LISTEN_ADDR")
+	if listenAddr == "" {
+		listenAddr = ":8080" // default listen address (container healthcheck expects 8080)
+	}
+
 	return &Config{
 		LogLevel:              parseLogLevel(os.Getenv("LOG_LEVEL")),
+		ListenAddr:            listenAddr,
 		PhoneNumber:           os.Getenv("SIGNAL_PHONE_NUMBER"),
 		SignalURL:             signalURL,
 		DatabasePath:          databasePath,
