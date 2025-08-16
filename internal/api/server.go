@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"summarizarr/internal/database"
 	"summarizarr/internal/version"
@@ -22,8 +22,59 @@ type Server struct {
 	server *http.Server
 }
 
-// NewServer creates a new API server.
+// ServerOptions holds configuration options for the server
+type ServerOptions struct {
+	SignalURL      string
+	ValidateSignal bool
+}
+
+// ServerOption is a functional option for configuring the server
+type ServerOption func(*ServerOptions)
+
+// WithSignalURL sets a custom Signal CLI URL
+func WithSignalURL(url string) ServerOption {
+	return func(opts *ServerOptions) {
+		opts.SignalURL = url
+	}
+}
+
+// WithSignalValidation enables or disables Signal CLI validation on startup
+func WithSignalValidation(validate bool) ServerOption {
+	return func(opts *ServerOptions) {
+		opts.ValidateSignal = validate
+	}
+}
+
+// NewServer creates a new API server with default options.
+// Maintained for backward compatibility.
 func NewServer(addr string, db *sql.DB, frontendFS fs.FS) *Server {
+	return NewServerWithOptions(addr, db, frontendFS)
+}
+
+// NewServerWithOptions creates a new API server with configurable options.
+func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...ServerOption) *Server {
+	// Apply default options
+	opts := &ServerOptions{
+		SignalURL:      getSignalURL(),
+		ValidateSignal: true,
+	}
+	
+	// Apply provided options
+	for _, option := range options {
+		option(opts)
+	}
+	
+	slog.Info("Initializing API server", "signal_url", opts.SignalURL, "listen_addr", addr)
+	
+	// Validate Signal URL if enabled
+	if opts.ValidateSignal {
+		if err := validateSignalURL(opts.SignalURL); err != nil {
+			slog.Warn("Signal CLI validation failed during startup", "signal_url", opts.SignalURL, "error", err)
+		} else {
+			slog.Info("Signal CLI connectivity verified", "signal_url", opts.SignalURL)
+		}
+	}
+
 	mux := http.NewServeMux()
 	s := &Server{
 		db: &database.DB{DB: db},
@@ -301,10 +352,7 @@ func (s *Server) handleSignalConfig(w http.ResponseWriter, r *http.Request) {
 
 // checkSignalRegistration checks if a phone number is registered with Signal CLI
 func (s *Server) checkSignalRegistration(phoneNumber string) bool {
-	signalURL := os.Getenv("SIGNAL_URL")
-	if signalURL == "" {
-		signalURL = "localhost:8080"
-	}
+	signalURL := getSignalURL()
 
 	// Try to get the list of registered accounts from Signal CLI
 	url := fmt.Sprintf("http://%s/v1/accounts", signalURL)
@@ -370,10 +418,7 @@ func (s *Server) handleSignalRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get Signal CLI URL
-	signalURL := os.Getenv("SIGNAL_URL")
-	if signalURL == "" {
-		signalURL = "localhost:8080"
-	}
+	signalURL := getSignalURL()
 
 	// Check if already registered first
 	if s.checkSignalRegistration(req.PhoneNumber) {
@@ -387,8 +432,7 @@ func (s *Server) handleSignalRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate QR code for device linking (recommended approach)
-	// Use localhost:8080 for QR code URL so it's accessible from browser
-	qrURL := "http://localhost:8080/v1/qrcodelink?device_name=summarizarr"
+	qrURL := fmt.Sprintf("http://%s/v1/qrcodelink?device_name=summarizarr", signalURL)
 
 	response := registerResponse{
 		QrCodeUrl:    qrURL,
@@ -489,6 +533,143 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveFrontend creates a handler for serving frontend static files
+// getSignalURL returns the Signal CLI URL from environment variable or default
+func getSignalURL() string {
+	signalURL := strings.TrimSpace(os.Getenv("SIGNAL_URL"))
+	if signalURL == "" {
+		return "localhost:8080"
+	}
+	
+	// Remove any protocol prefix for consistency
+	signalURL = strings.TrimPrefix(signalURL, "http://")
+	signalURL = strings.TrimPrefix(signalURL, "https://")
+	
+	return signalURL
+}
+
+// validateSignalURL validates that the Signal URL is reachable
+func validateSignalURL(signalURL string) error {
+	if signalURL == "" {
+		return fmt.Errorf("signal URL is empty")
+	}
+	
+	// Basic URL validation - ensure it contains a valid host:port pattern
+	if !strings.Contains(signalURL, ":") {
+		return fmt.Errorf("signal URL must include port (e.g., localhost:8080)")
+	}
+	
+	// Test connectivity to the Signal CLI service
+	url := fmt.Sprintf("http://%s/v1/health", signalURL)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("signal CLI not reachable at %s: %w", signalURL, err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("signal CLI health check failed at %s: status %d", signalURL, resp.StatusCode)
+	}
+	
+	return nil
+}
+
+// validateAndCleanPath validates and cleans a URL path to prevent directory traversal attacks
+func validateAndCleanPath(urlPath string) (string, error) {
+	// Handle root path specially
+	if urlPath == "/" {
+		return "", nil // Empty path for root, will be handled by SPA routing
+	}
+	
+	// Remove leading slash
+	cleanPath := strings.TrimPrefix(urlPath, "/")
+	
+	// Check for directory traversal patterns BEFORE cleaning
+	if strings.Contains(cleanPath, "..") {
+		return "", fmt.Errorf("invalid path: directory traversal attempt")
+	}
+	
+	// Use filepath.Clean for proper OS path handling
+	cleanPath = filepath.Clean(cleanPath)
+	
+	// Convert back to forward slashes for consistency (filepath.Clean may use OS separator)
+	cleanPath = filepath.ToSlash(cleanPath)
+	
+	// Handle single dot (current directory) - this can result from filepath.Clean on traversal attempts
+	if cleanPath == "." {
+		return "", nil // Empty path for SPA routing
+	}
+	
+	// Comprehensive directory traversal checks
+	if cleanPath == ".." || 
+		strings.HasPrefix(cleanPath, "../") || 
+		strings.Contains(cleanPath, "/../") ||
+		strings.HasSuffix(cleanPath, "/..") ||
+		strings.Contains(cleanPath, "\\") ||
+		strings.Contains(cleanPath, "\x00") {
+		return "", fmt.Errorf("invalid path: directory traversal attempt")
+	}
+	
+	// Ensure path doesn't start with a dot (hidden files), but allow empty paths
+	if cleanPath != "" && strings.HasPrefix(cleanPath, ".") {
+		return "", fmt.Errorf("invalid path: access to hidden files not allowed")
+	}
+	
+	// File extension whitelist for security (only for non-empty paths)
+	if cleanPath != "" && !isAllowedFileExtension(cleanPath) {
+		return "", fmt.Errorf("invalid path: file type not allowed")
+	}
+	
+	return cleanPath, nil
+}
+
+// isAllowedFileExtension checks if the file extension is in the whitelist
+func isAllowedFileExtension(path string) bool {
+	// Allow files without extensions (for SPA routing)
+	if !strings.Contains(path, ".") {
+		return true
+	}
+	
+	// Allowed extensions for frontend assets
+	allowedExts := []string{
+		".html", ".htm",
+		".css",
+		".js", ".mjs",
+		".json",
+		".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp",
+		".woff", ".woff2", ".ttf", ".eot",
+		".txt", ".xml",
+	}
+	
+	// Blocked extensions that should never be served
+	blockedExts := []string{
+		".php", ".asp", ".aspx", ".jsp",
+		".sh", ".bat", ".cmd", ".exe", ".com",
+		".env", ".config", ".ini", ".conf",
+		".key", ".pem", ".crt", ".cer",
+		".log", ".bak", ".backup", ".tmp", ".temp",
+		".sql", ".db", ".sqlite", ".sqlite3",
+	}
+	
+	lowerPath := strings.ToLower(path)
+	
+	// Check for blocked extensions anywhere in the filename
+	for _, ext := range blockedExts {
+		if strings.Contains(lowerPath, ext) {
+			return false
+		}
+	}
+	
+	// Check if final extension is in allowed list
+	for _, ext := range allowedExts {
+		if strings.HasSuffix(lowerPath, ext) {
+			return true
+		}
+	}
+	
+	return false
+}
+
 func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip API routes
@@ -502,11 +683,10 @@ func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
 			urlPath = "/index.html"
 		}
 
-		// Try to serve the exact file first
 		// Sanitize and validate the path to prevent directory traversal
-		cleanPath := path.Clean(strings.TrimPrefix(urlPath, "/"))
-		// Disallow paths that escape the root (start with ".." or contain "/..")
-		if cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || strings.Contains(cleanPath, "/..") {
+		cleanPath, err := validateAndCleanPath(urlPath)
+		if err != nil {
+			slog.WarnContext(r.Context(), "Invalid path request blocked", "path", urlPath, "error", err)
 			http.NotFound(w, r)
 			return
 		}
