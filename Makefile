@@ -76,7 +76,7 @@ all: signal ## Start all services locally (signal container + Go backend + Next.
 docker: ## Run development stack with docker compose (dev compose file)
 	@echo "$(YELLOW)Starting development stack with Docker Compose (compose.dev.yaml)...$(NC)"
 	docker compose -f compose.dev.yaml up --build -d
-	@echo "$(GREEN)Development stack started. Backend: http://localhost:8080$(NC)"
+	@echo "$(GREEN)Development stack started. Backend: http://localhost:8081$(NC)"
 	@echo "$(GREEN)Adminer (DB viewer): http://localhost:8083$(NC)"
 	@echo "$(GREEN)Dozzle (logs viewer): http://localhost:8084$(NC)"
 

@@ -192,10 +192,10 @@ jobs:
           sleep 10
 
           # Test health endpoint
-          curl -f http://localhost:8080/health || exit 1
+          curl -f http://localhost:8081/health || exit 1
 
           # Test version endpoint
-          curl -f http://localhost:8080/api/version || exit 1
+          curl -f http://localhost:8081/api/version || exit 1
 
           # Clean up
           docker stop test-container
