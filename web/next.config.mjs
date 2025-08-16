@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Development mode - no static export, enable API proxying
+  // Static export configuration for production builds
+  output: 'export',
   trailingSlash: true,
-  turbopack: {},
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -12,14 +12,7 @@ const nextConfig = {
       },
     ],
   },
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:8081/api/:path*',
-      },
-    ]
-  },
+  // Remove rewrites for static export as they're not supported
 }
 
 export default nextConfig

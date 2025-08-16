@@ -40,11 +40,11 @@ backend-bg: ## Run Go backend in background with local config
 
 frontend: ## Run Next.js frontend locally with hot reload
 	@echo "$(YELLOW)Starting Next.js frontend with hot reload...$(NC)"
-	cd web && npm install && cp next.config.mjs next.config.mjs.bak && cp next.config.dev.mjs next.config.mjs && npm run dev
+	cd web && npm install && cp next.config.dev.mjs next.config.mjs && npm run dev
 
 frontend-bg: ## Run Next.js frontend in background
 	@echo "$(YELLOW)Starting Next.js frontend in background...$(NC)"
-	@cd web && cp next.config.mjs next.config.mjs.bak 2>/dev/null || true && cp next.config.dev.mjs next.config.mjs
+	@cd web && cp next.config.dev.mjs next.config.mjs
 	@cd web && ( nohup npm run dev > ../frontend.log 2>&1 & echo $$! > ../frontend.pid )
 	@echo "$(GREEN)Frontend started in background (PID: $$(cat frontend.pid))$(NC)"
 
@@ -117,15 +117,12 @@ stop: ## Stop all local services and containers (dev compose only)
 	@# Fallback: kill processes by name
 	@pkill -f "go run.*cmd/summarizarr/main.go" 2>/dev/null || true
 	@pkill -f "npm run dev" 2>/dev/null || true
-	@# Restore original Next.js config
-	@cd web && [ -f next.config.mjs.bak ] && mv next.config.mjs.bak next.config.mjs || true
 	@echo "$(GREEN)✓ All services stopped$(NC)"
 
 clean: stop ## Remove build artifacts and stop containers
 	@echo "$(YELLOW)Cleaning up build artifacts...$(NC)"
 	@rm -rf web/node_modules web/.next
 	@rm -f summarizarr backend.pid frontend.pid backend.log frontend.log
-	@rm -f web/next.config.mjs.bak
 	@docker compose -f compose.dev.yaml down --volumes --remove-orphans 2>/dev/null || true
 	@echo "$(GREEN)✓ Cleanup complete$(NC)"
 	@echo "$(YELLOW)Note: Database (./data/) and Signal config (./signal-cli-config/) preserved$(NC)"
