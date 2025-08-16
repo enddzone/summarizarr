@@ -47,8 +47,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # Stage 3: Runtime
 FROM alpine:latest
 
-# Add ca certificates for HTTPS and basic utilities
-RUN apk --no-cache add ca-certificates wget && \
+# Update package index and add ca certificates for HTTPS and basic utilities
+RUN apk update && \
+    apk --no-cache add ca-certificates wget && \
     addgroup -g 1001 summarizarr && \
     adduser -D -s /bin/sh -u 1001 -G summarizarr summarizarr
 
