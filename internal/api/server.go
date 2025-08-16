@@ -2,11 +2,14 @@ package api
 
 import (
 	"context"
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +18,14 @@ import (
 	"summarizarr/internal/version"
 	"time"
 )
+
+// CacheConfig defines caching configuration for different file types
+type CacheConfig struct {
+	MaxAge       int  // Cache duration in seconds
+	MustRevalidate bool // Force revalidation
+	NoCache      bool // Disable caching
+	UseETag      bool // Enable ETag generation
+}
 
 // Server is the API server.
 type Server struct {
@@ -101,6 +112,161 @@ func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...
 	}
 
 	return s
+}
+
+// getCacheConfig returns cache configuration based on file extension
+func getCacheConfig(path string) CacheConfig {
+	ext := strings.ToLower(filepath.Ext(path))
+	
+	switch ext {
+	case ".html", ".htm":
+		// HTML files: no-cache, must-revalidate for fresh content
+		return CacheConfig{
+			MaxAge:         0,
+			MustRevalidate: true,
+			NoCache:        true,
+			UseETag:        true,
+		}
+	case ".css", ".js", ".mjs":
+		// CSS/JS files: long-term caching with ETag for cache busting
+		return CacheConfig{
+			MaxAge:         31536000, // 1 year
+			MustRevalidate: false,
+			NoCache:        false,
+			UseETag:        true,
+		}
+	case ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp":
+		// Images: medium-term caching
+		return CacheConfig{
+			MaxAge:         2592000, // 30 days
+			MustRevalidate: false,
+			NoCache:        false,
+			UseETag:        true,
+		}
+	case ".json":
+		// JSON files: short-term caching
+		return CacheConfig{
+			MaxAge:         300, // 5 minutes
+			MustRevalidate: true,
+			NoCache:        false,
+			UseETag:        true,
+		}
+	case ".woff", ".woff2", ".ttf", ".eot":
+		// Fonts: long-term caching
+		return CacheConfig{
+			MaxAge:         31536000, // 1 year
+			MustRevalidate: false,
+			NoCache:        false,
+			UseETag:        true,
+		}
+	default:
+		// Default: short-term caching with revalidation
+		return CacheConfig{
+			MaxAge:         300, // 5 minutes
+			MustRevalidate: true,
+			NoCache:        false,
+			UseETag:        true,
+		}
+	}
+}
+
+// setResponseCacheHeaders sets appropriate cache headers based on configuration
+func setResponseCacheHeaders(w http.ResponseWriter, config CacheConfig, content []byte) {
+	if config.NoCache {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+	} else {
+		cacheControl := fmt.Sprintf("max-age=%d", config.MaxAge)
+		if config.MustRevalidate {
+			cacheControl += ", must-revalidate"
+		}
+		w.Header().Set("Cache-Control", cacheControl)
+	}
+	
+	// Generate and set ETag if enabled
+	if config.UseETag && len(content) > 0 {
+		hash := md5.Sum(content)
+		etag := `"` + hex.EncodeToString(hash[:]) + `"`
+		w.Header().Set("ETag", etag)
+	}
+	
+	// Set Last-Modified to current time for all resources
+	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+}
+
+// getContentType returns the appropriate MIME type for a file path
+func getContentType(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	
+	// Use mime package for standard detection first
+	contentType := mime.TypeByExtension(ext)
+	if contentType != "" {
+		return contentType
+	}
+	
+	// Custom mappings for common web assets
+	switch ext {
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".js", ".mjs":
+		return "application/javascript; charset=utf-8"
+	case ".json":
+		return "application/json; charset=utf-8"
+	case ".html", ".htm":
+		return "text/html; charset=utf-8"
+	case ".svg":
+		return "image/svg+xml"
+	case ".ico":
+		return "image/x-icon"
+	case ".woff":
+		return "font/woff"
+	case ".woff2":
+		return "font/woff2"
+	case ".ttf":
+		return "font/ttf"
+	case ".eot":
+		return "application/vnd.ms-fontobject"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// checkConditionalRequest checks if the request can be served from cache
+func checkConditionalRequest(r *http.Request, etag string) bool {
+	// Check If-None-Match header
+	if ifNoneMatch := r.Header.Get("If-None-Match"); ifNoneMatch != "" {
+		// Simple comparison - in production, this should handle multiple ETags
+		return ifNoneMatch == etag
+	}
+	
+	return false
+}
+
+// setAPIResponseHeaders sets appropriate headers for API responses
+func setAPIResponseHeaders(w http.ResponseWriter, r *http.Request, data []byte, cacheSeconds int) bool {
+	// Generate ETag for the response data
+	hash := md5.Sum(data)
+	etag := `"` + hex.EncodeToString(hash[:]) + `"`
+	
+	// Check conditional request
+	if checkConditionalRequest(r, etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return true // Indicates that response was served from cache
+	}
+	
+	// Set cache headers
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+	
+	if cacheSeconds > 0 {
+		w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d, must-revalidate", cacheSeconds))
+	} else {
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+	}
+	
+	return false // Indicates that full response should be sent
 }
 
 // handleDeleteSummary handles DELETE /api/summaries/{id}
@@ -211,10 +377,22 @@ func (s *Server) handleGetSummaries(w http.ResponseWriter, r *http.Request) {
 		response = append(response, resp)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	// Encode response to JSON first to generate ETag
+	responseData, err := json.Marshal(response)
+	if err != nil {
 		slog.ErrorContext(r.Context(), "Failed to encode summaries response", "error", err)
 		http.Error(w, fmt.Sprintf("failed to encode summaries: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Set cache headers (5 minutes cache for summaries)
+	if served := setAPIResponseHeaders(w, r, responseData, 300); served {
+		return // Response served from cache (304 Not Modified)
+	}
+
+	// Write the response
+	if _, err := w.Write(responseData); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to write summaries response", "error", err)
 		return
 	}
 
@@ -249,10 +427,22 @@ func (s *Server) handleGetGroups(w http.ResponseWriter, r *http.Request) {
 		groups = append(groups, group)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(groups); err != nil {
+	// Encode response to JSON first to generate ETag
+	responseData, err := json.Marshal(groups)
+	if err != nil {
 		slog.ErrorContext(r.Context(), "Failed to encode groups response", "error", err)
 		http.Error(w, fmt.Sprintf("failed to encode groups: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Set cache headers (10 minutes cache for groups as they change infrequently)
+	if served := setAPIResponseHeaders(w, r, responseData, 600); served {
+		return // Response served from cache (304 Not Modified)
+	}
+
+	// Write the response
+	if _, err := w.Write(responseData); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to write groups response", "error", err)
 		return
 	}
 
@@ -340,10 +530,22 @@ func (s *Server) handleSignalConfig(w http.ResponseWriter, r *http.Request) {
 		IsRegistered: isRegistered,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	// Encode response to JSON first to generate ETag
+	responseData, err := json.Marshal(response)
+	if err != nil {
 		slog.ErrorContext(r.Context(), "Failed to encode signal config response", "error", err)
 		http.Error(w, fmt.Sprintf("failed to encode signal config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Set cache headers (30 seconds cache for config as it may change during setup)
+	if served := setAPIResponseHeaders(w, r, responseData, 30); served {
+		return // Response served from cache (304 Not Modified)
+	}
+
+	// Write the response
+	if _, err := w.Write(responseData); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to write signal config response", "error", err)
 		return
 	}
 
@@ -503,10 +705,22 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 
 	versionInfo := version.Get()
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(versionInfo); err != nil {
+	// Encode response to JSON first to generate ETag
+	responseData, err := json.Marshal(versionInfo)
+	if err != nil {
 		slog.ErrorContext(r.Context(), "Failed to encode version response", "error", err)
 		http.Error(w, "failed to encode version response", http.StatusInternalServerError)
+		return
+	}
+
+	// Set cache headers (1 hour cache for version info as it changes infrequently)
+	if served := setAPIResponseHeaders(w, r, responseData, 3600); served {
+		return // Response served from cache (304 Not Modified)
+	}
+
+	// Write the response
+	if _, err := w.Write(responseData); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to write version response", "error", err)
 		return
 	}
 }
@@ -524,10 +738,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"service":   "summarizarr",
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	// Encode response to JSON first
+	responseData, err := json.Marshal(response)
+	if err != nil {
 		slog.ErrorContext(r.Context(), "Failed to encode health response", "error", err)
 		http.Error(w, "failed to encode health response", http.StatusInternalServerError)
+		return
+	}
+
+	// No cache for health endpoint (always return fresh status)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
+	// Write the response
+	if _, err := w.Write(responseData); err != nil {
+		slog.ErrorContext(r.Context(), "Failed to write health response", "error", err)
 		return
 	}
 }
@@ -679,6 +906,9 @@ func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
 		}
 
 		urlPath := r.URL.Path
+		originalPath := urlPath
+		isSPARoute := false
+
 		if urlPath == "/" {
 			urlPath = "/index.html"
 		}
@@ -701,26 +931,54 @@ func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
 				http.Error(w, "page not found", http.StatusNotFound)
 				return
 			}
-			// Set correct content type for HTML
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		} else {
-			// Set appropriate content type based on file extension
-			if strings.HasSuffix(urlPath, ".css") {
-				w.Header().Set("Content-Type", "text/css")
-			} else if strings.HasSuffix(urlPath, ".js") {
-				w.Header().Set("Content-Type", "application/javascript")
-			} else if strings.HasSuffix(urlPath, ".html") {
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			} else if strings.HasSuffix(urlPath, ".json") {
-				w.Header().Set("Content-Type", "application/json")
-			} else if strings.HasSuffix(urlPath, ".png") {
-				w.Header().Set("Content-Type", "image/png")
-			} else if strings.HasSuffix(urlPath, ".svg") {
-				w.Header().Set("Content-Type", "image/svg+xml")
-			} else if strings.HasSuffix(urlPath, ".ico") {
-				w.Header().Set("Content-Type", "image/x-icon")
-			}
+			// Mark this as SPA routing
+			isSPARoute = true
+			cleanPath = "index.html"
 		}
+
+		// Get cache configuration for the file type
+		var cacheConfig CacheConfig
+		if isSPARoute {
+			// Use HTML cache config for SPA routes
+			cacheConfig = getCacheConfig("index.html")
+		} else {
+			cacheConfig = getCacheConfig(cleanPath)
+		}
+
+		// Generate ETag if enabled
+		var etag string
+		if cacheConfig.UseETag && len(content) > 0 {
+			hash := md5.Sum(content)
+			etag = `"` + hex.EncodeToString(hash[:]) + `"`
+		}
+
+		// Check conditional request (If-None-Match)
+		if etag != "" && checkConditionalRequest(r, etag) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+
+		// Set content type using enhanced detection
+		var contentType string
+		if isSPARoute {
+			contentType = "text/html; charset=utf-8"
+		} else {
+			contentType = getContentType(cleanPath)
+		}
+		w.Header().Set("Content-Type", contentType)
+
+		// Set cache headers
+		setResponseCacheHeaders(w, cacheConfig, content)
+
+		// Log cache strategy for debugging
+		slog.DebugContext(r.Context(), "Serving static asset",
+			"path", originalPath,
+			"file", cleanPath,
+			"spa_route", isSPARoute,
+			"content_type", contentType,
+			"cache_max_age", cacheConfig.MaxAge,
+			"has_etag", etag != "",
+		)
 
 		w.Write(content)
 	})
