@@ -11,8 +11,10 @@ import (
 	"summarizarr/internal/api"
 	"summarizarr/internal/config"
 	"summarizarr/internal/database"
+	"summarizarr/internal/frontend"
 	"summarizarr/internal/ollama"
 	signalclient "summarizarr/internal/signal"
+	"summarizarr/internal/version"
 	"time"
 )
 
@@ -21,7 +23,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
 
-	slog.Info("Summarizarr starting...")
+	slog.Info("Summarizarr starting...", "version", version.GetVersion())
 
 	// Validate backend-specific configuration
 	if err := validateConfig(cfg); err != nil {
@@ -119,7 +121,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	apiServer := api.NewServer(":8081", db.DB)
+	// Prepare frontend filesystem
+	frontendFS, err := frontend.GetFS()
+	if err != nil {
+		slog.Error("Failed to get frontend filesystem", "error", err)
+		frontendFS = nil
+	}
+
+	// API server listen address is configurable via LISTEN_ADDR (default :8080)
+	apiServer := api.NewServer(cfg.ListenAddr, db.DB, frontendFS)
 
 	go apiServer.Start()
 

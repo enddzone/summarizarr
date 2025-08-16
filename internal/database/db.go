@@ -325,16 +325,17 @@ type Summary struct {
 
 // GetSummaries retrieves all summaries from the database ordered by creation time.
 func (db *DB) GetSummaries() ([]Summary, error) {
-	return db.GetSummariesWithFilters("", "", "", "")
+	return db.GetSummariesWithFilters("", "", "", "", "")
 }
 
 // GetSummariesWithFilters retrieves summaries with optional filtering
-func (db *DB) GetSummariesWithFilters(search, groups, startTimeStr, endTimeStr string) ([]Summary, error) {
+func (db *DB) GetSummariesWithFilters(search, groups, startTimeStr, endTimeStr, sort string) ([]Summary, error) {
 	slog.Debug("Executing GetSummariesWithFilters query",
 		"search", search,
 		"groups", groups,
 		"start_time", startTimeStr,
-		"end_time", endTimeStr)
+		"end_time", endTimeStr,
+		"sort", sort)
 
 	// Build the query with optional filters
 	query := `SELECT s.id, s.group_id, COALESCE(g.name, 'Group ' || s.group_id) as group_name, s.summary_text, s.start_timestamp, s.end_timestamp, s.created_at 
@@ -386,7 +387,12 @@ func (db *DB) GetSummariesWithFilters(search, groups, startTimeStr, endTimeStr s
 		}
 	}
 
-	query += " ORDER BY s.created_at DESC"
+	// Add ordering based on sort parameter
+	orderBy := "s.created_at DESC" // default to newest first
+	if sort == "oldest" {
+		orderBy = "s.created_at ASC"
+	}
+	query += " ORDER BY " + orderBy
 
 	slog.Debug("Executing query", "query", query, "args", args)
 

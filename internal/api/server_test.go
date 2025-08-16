@@ -107,7 +107,7 @@ func TestGetSummariesEndpoint(t *testing.T) {
 	}
 
 	// Create server
-	server := NewServer(":8081", testDB)
+	server := NewServer(":8080", testDB, nil)
 
 	// Create test request
 	req := httptest.NewRequest("GET", "/summaries", nil)
@@ -237,7 +237,7 @@ func TestGetSummariesEmpty(t *testing.T) {
 	}
 
 	// Create server
-	server := NewServer(":8081", testDB)
+	server := NewServer(":8080", testDB, nil)
 
 	// Create test request
 	req := httptest.NewRequest("GET", "/summaries", nil)

@@ -30,9 +30,12 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 - RESTful endpoints for summaries, groups, export, and Signal configuration
 
 **Frontend**: 
-- Next.js 15 application in `web/` directory
+- Next.js 15 application in `web/` directory with dual configuration:
+  - **Development mode**: Dev server with hot reload and API proxying (port 3000)
+  - **Production mode**: Static export embedded in Go backend (port 8081)
 - shadcn/ui components with responsive design
 - Default "Today" date filter for summaries
+- Automatic API proxying from dev server to backend during local development
 
 ## Development Commands
 
@@ -41,20 +44,35 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 # Initial setup
 make dev-setup
 
-# Start all services locally
-# This is a blocking command, always run in the background
+# Start all services locally - non-blocking with background processes
 make all          # Signal container + Go backend + Next.js frontend
 
 # Individual services  
 make signal       # Start signal-cli-rest-api container only
-make backend      # Run Go backend locally
-make frontend     # Run Next.js frontend with hot reload
+make backend      # Run Go backend locally (blocking)
+make backend-bg   # Run Go backend in background with PID management
+make frontend     # Run Next.js frontend with hot reload (blocking)
+make frontend-bg  # Run Next.js frontend in background with API proxying
 
-# Utilities
-make status       # Check service status
-make stop         # Stop all services
-make clean        # Remove build artifacts
+# Process management and monitoring
+make status       # Check service health and URLs
+make stop         # Stop all services and clean up processes
+make clean        # Remove build artifacts and preserve data
 ```
+
+### Service URLs
+- **Frontend (Development)**: http://localhost:3000 - Next.js dev server with hot reload
+- **Backend API**: http://localhost:8081 - Go backend with embedded frontend
+- **Signal CLI**: http://localhost:8080 - Signal WebSocket service
+
+**Note**: Both port 3000 and 8081 serve the frontend, but port 3000 supports hot reload for development.
+
+### Process Management
+- **Background processes**: `make all` runs backend and frontend as background processes with PID files
+- **Process monitoring**: PID files stored as `backend.pid` and `frontend.pid`
+- **Log files**: Background processes log to `backend.log` and `frontend.log`
+- **Clean shutdown**: `make stop` properly terminates all processes and cleans up PID files
+- **Data preservation**: Database (`./data/`) and Signal config (`./signal-cli-config/`) preserved across restarts
 
 ### Testing
 ```bash

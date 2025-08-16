@@ -1,29 +1,87 @@
-# Build stage
-FROM golang:1.24-alpine AS builder
+# Stage 1: Build Next.js frontend
+FROM node:24-alpine AS frontend-builder
+
+WORKDIR /app/web
+
+# Copy package files
+COPY web/package*.json ./
+
+# Install dependencies (include dev deps for build)
+RUN npm ci
+
+# Copy source code
+COPY web/ ./
+
+# Build for production
+RUN npm run build
+
+# Stage 2: Build Go backend
+FROM golang:1.24-alpine AS backend-builder
 
 WORKDIR /app
 
+# Copy Go modules
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy source code
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /summarizarr ./cmd/summarizarr
+# Copy frontend build output to embed location
+COPY --from=frontend-builder /app/web/out internal/frontend/static/
 
-# Final stage - use Ubuntu for glibc compatibility
-FROM ubuntu:24.04
+# Build static Go binary with version information
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
 
-# Install required packages for Ollama
-RUN apt-get update && apt-get install -y \
-    curl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s -extldflags '-static' \
+             -X 'summarizarr/internal/version.Version=${VERSION}' \
+             -X 'summarizarr/internal/version.GitCommit=${GIT_COMMIT}' \
+             -X 'summarizarr/internal/version.BuildTime=${BUILD_TIME}'" \
+    -a -installsuffix cgo \
+    -o summarizarr \
+    ./cmd/summarizarr
 
-WORKDIR /
+# Stage 3: Runtime
+FROM alpine:latest
 
-COPY --from=builder /summarizarr /summarizarr
-COPY schema.sql .
+# Add ca certificates for HTTPS and basic utilities
+RUN apk --no-cache add ca-certificates wget && \
+    addgroup -g 1001 summarizarr && \
+    adduser -D -s /bin/sh -u 1001 -G summarizarr summarizarr
 
-EXPOSE 8081
+WORKDIR /app
 
-ENTRYPOINT ["/summarizarr"]
+# Copy binary and schema
+COPY --from=backend-builder /app/summarizarr .
+COPY --from=backend-builder /app/schema.sql .
+
+# Create data directory and set permissions
+RUN mkdir -p /data /config && \
+    chown -R summarizarr:summarizarr /app /data /config
+
+# Switch to non-root user
+USER summarizarr
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+# Container metadata labels (OCI compliant)
+LABEL org.opencontainers.image.title="Summarizarr"
+LABEL org.opencontainers.image.description="AI-powered Signal message summarizer"
+LABEL org.opencontainers.image.vendor="EnddZone"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/enddzone/summarizarr"
+
+# Expose unified port
+EXPOSE 8080
+
+# Default environment variables
+ENV DATABASE_PATH=/data/summarizarr.db
+ENV AI_PROVIDER=local
+ENV SUMMARIZATION_INTERVAL=1h
+
+ENTRYPOINT ["./summarizarr"]
