@@ -84,6 +84,7 @@ jobs:
             VERSION=${{ github.ref_name }}
             GIT_COMMIT=${{ github.sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
+            GOARCH=${{ matrix.arch }}
 
   merge:
     name: Create Multi-Platform Manifest and Release

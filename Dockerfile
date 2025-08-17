@@ -34,8 +34,9 @@ COPY --from=frontend-builder /app/web/out internal/frontend/static/
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
+ARG GOARCH
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH:-amd64} go build \
     -ldflags="-w -s -extldflags '-static' \
              -X 'summarizarr/internal/version.Version=${VERSION}' \
              -X 'summarizarr/internal/version.GitCommit=${GIT_COMMIT}' \

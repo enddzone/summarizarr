@@ -43,11 +43,6 @@ func main() {
 		}
 	}
 
-	// Ensure the models directory exists
-	if err := os.MkdirAll(cfg.ModelsPath, 0755); err != nil {
-		slog.Error("Failed to create models directory", "error", err, "path", cfg.ModelsPath)
-		os.Exit(1)
-	}
 
 	db, err := database.NewDB(cfg.DatabasePath)
 	if err != nil {
@@ -62,39 +57,8 @@ func main() {
 	}
 
 	// Initialize AI backend based on configuration
-	var ollamaManager *ollama.Manager
 	if cfg.AIProvider == "local" {
-		slog.Info("AI_PROVIDER=local detected. Initializing Ollama backend...")
-
-		// Ensure the models directory exists for Ollama
-		if err := os.MkdirAll(cfg.ModelsPath, 0755); err != nil {
-			slog.Error("Failed to create models directory", "error", err, "path", cfg.ModelsPath)
-			os.Exit(1)
-		}
-
-		ollamaManager = ollama.NewManager(cfg.ModelsPath, cfg.OllamaHost)
-
-		// Start Ollama server if auto-download is enabled
-		if cfg.OllamaAutoDownload {
-			slog.Info("Ensuring Ollama is installed...")
-			if err := ollamaManager.EnsureInstalled(ctx); err != nil {
-				slog.Error("Failed to install Ollama", "error", err)
-				os.Exit(1)
-			}
-
-			slog.Info("Starting Ollama server...")
-			if err := ollamaManager.Start(ctx); err != nil {
-				slog.Error("Failed to start Ollama server", "error", err)
-				os.Exit(1)
-			}
-
-			// Ensure Ollama is stopped on shutdown
-			defer func() {
-				if err := ollamaManager.Stop(); err != nil {
-					slog.Error("Failed to stop Ollama server", "error", err)
-				}
-			}()
-		}
+		slog.Info("AI_PROVIDER=local detected. Using external Ollama server...")
 	} else if cfg.AIProvider == "openai" {
 		slog.Info("AI_PROVIDER=openai detected. Initializing OpenAI backend...")
 
@@ -180,118 +144,41 @@ func testAIProvider(ctx context.Context, aiClient *ai.Client, cfg *config.Config
 	}
 }
 
-// testOllamaBackend tests the Ollama backend (existing logic)
+// testOllamaBackend tests the Ollama backend using external sidecar with comprehensive validation
 func testOllamaBackend(ctx context.Context, aiClient *ai.Client, cfg *config.Config, db *database.DB) error {
-	// Only proceed if auto-download is enabled
-	if !cfg.OllamaAutoDownload {
-		slog.Info("Ollama auto-download disabled, skipping model test")
-		return nil
+	slog.Info("Performing comprehensive validation of external Ollama server...")
+
+	// Get the Ollama client from the AI client for direct validation
+	if err := validateOllamaStartup(ctx, cfg); err != nil {
+		return fmt.Errorf("ollama startup validation failed: %w", err)
 	}
 
-	// Get the backend client to access Ollama-specific methods
-	backend, ok := aiClient.GetBackend().(*ollama.Client)
-	if !ok {
-		return fmt.Errorf("expected Ollama backend, got different type")
-	}
-
-	// First, check if Ollama server is healthy
-	slog.Info("Checking Ollama server health...")
-	if err := backend.HealthCheck(ctx); err != nil {
-		return fmt.Errorf("ollama health check failed: %w", err)
-	}
-	slog.Info("Ollama server is healthy")
-
-	// Ensure the model is downloaded
-	slog.Info("Ensuring model is available", "model", cfg.LocalModel)
-	if err := backend.EnsureModel(ctx, true); err != nil {
-		return fmt.Errorf("failed to ensure model: %w", err)
-	}
-
-	// Warm up the model to load it into memory
-	slog.Info("Warming up model (this may take a moment for first load)...")
-	if err := backend.WarmupModel(ctx); err != nil {
-		return fmt.Errorf("failed to warm up model: %w", err)
-	}
-
-	// Test with a simple prompt
-	slog.Info("Testing Ollama backend with simple prompt...")
+	// Perform end-to-end test through AI client
+	slog.Info("Testing end-to-end summarization through AI client...")
 	testMessages := []database.MessageForSummary{
 		{
-			UserName:    "Alice",
-			Text:        "Hello!",
-			MessageType: "regular",
-		},
-		{
-			UserName:    "Bob",
-			Text:        "Hi there!",
+			UserName:    "TestUser",
+			Text:        "Hello, testing connectivity!",
 			MessageType: "regular",
 		},
 	}
 
-	// Use a fresh context with extended timeout for test
-	testCtx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	// Use a context with reasonable timeout for the full test
+	testCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-
-	// Add progress logging for the test
-	go func() {
-		ticker := time.NewTicker(15 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-testCtx.Done():
-				return
-			case <-ticker.C:
-				slog.Info("Still waiting for test summarization to complete...")
-			}
-		}
-	}()
 
 	summary, err := aiClient.Summarize(testCtx, testMessages)
 	if err != nil {
-		return fmt.Errorf("test summarization failed: %w", err)
+		slog.Warn("End-to-end test failed, but continuing startup", "error", err)
+		return nil // Graceful degradation - log warning but don't fail startup
 	}
 
-	slog.Info("Ollama backend is ready", "summary", summary)
-
-	// Test with actual messages from database if available
-	groupIDs, err := db.GetGroups()
-	if err != nil {
-		slog.Warn("Could not get groups for real message test", "error", err)
-		return nil // Don't fail on this, test prompt worked
+	if summary == "" {
+		slog.Warn("End-to-end test returned empty response, but continuing startup")
+		return nil // Graceful degradation
 	}
 
-	if len(groupIDs) > 0 {
-		// Get recent messages from the first group
-		groupID := groupIDs[0]
-		now := time.Now().Unix()
-		oneDayAgo := now - (24 * 60 * 60) // 24 hours ago
-
-		messages, err := db.GetMessagesForSummarization(groupID, oneDayAgo, now)
-		if err != nil {
-			slog.Warn("Could not get real messages for test", "error", err)
-			return nil
-		}
-
-		if len(messages) > 0 {
-			slog.Info("Testing with real messages from database", "group_id", groupID, "message_count", len(messages))
-
-			// Use fresh context for real message test too
-			realTestCtx, realCancel := context.WithTimeout(context.Background(), 300*time.Second)
-			defer realCancel()
-
-			realSummary, err := aiClient.Summarize(realTestCtx, messages)
-			if err != nil {
-				slog.Warn("Real message summarization test failed", "error", err)
-				return nil // Don't fail, basic test worked
-			}
-			slog.Info("Real message summarization test successful", "summary", realSummary)
-		} else {
-			slog.Info("No recent messages found for real message test")
-		}
-	} else {
-		slog.Info("No groups found for real message test")
-	}
-
+	slog.Info("External Ollama backend fully validated", "model", cfg.LocalModel, "host", cfg.OllamaHost, "summary_length", len(summary))
 	return nil
 }
 
@@ -368,4 +255,56 @@ func validateConfig(cfg *config.Config) error {
 	}
 
 	return nil
+}
+
+// validateOllamaStartup performs comprehensive validation of the external Ollama server with retry logic
+func validateOllamaStartup(ctx context.Context, cfg *config.Config) error {
+	client := ollama.NewClient(cfg.OllamaHost, cfg.LocalModel)
+	
+	// Implement retry logic for server connectivity
+	maxRetries := 5
+	retryInterval := 2 * time.Second
+	
+	slog.Info("Validating Ollama server startup", "host", cfg.OllamaHost, "model", cfg.LocalModel, "max_retries", maxRetries)
+	
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Create a timeout context for each validation attempt
+		validateCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		
+		// Attempt comprehensive validation
+		err := client.ValidateExternalOllama(validateCtx)
+		cancel()
+		
+		if err == nil {
+			slog.Info("Ollama startup validation successful", "attempt", attempt, "total_attempts", maxRetries)
+			return nil
+		}
+		
+		lastErr = err
+		
+		if attempt < maxRetries {
+			slog.Warn("Ollama validation failed, retrying...", 
+				"attempt", attempt, 
+				"max_retries", maxRetries,
+				"retry_in_seconds", int(retryInterval.Seconds()),
+				"error", err)
+			
+			// Wait before retrying, but respect context cancellation
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("validation cancelled: %w", ctx.Err())
+			case <-time.After(retryInterval):
+				// Exponential backoff with jitter
+				retryInterval = time.Duration(float64(retryInterval) * 1.5)
+				if retryInterval > 10*time.Second {
+					retryInterval = 10 * time.Second
+				}
+			}
+		}
+	}
+	
+	// If we get here, all attempts failed
+	return fmt.Errorf("ollama validation failed after %d attempts. Last error: %w\n\nCommon solutions:\n1. Start Ollama: 'ollama serve'\n2. Pull the model: 'ollama pull %s'\n3. Check Ollama is running on the correct host: %s", 
+		maxRetries, lastErr, cfg.LocalModel, cfg.OllamaHost)
 }

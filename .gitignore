@@ -23,3 +23,4 @@ backend.pid
 frontend.log
 backend.log
 coverage.out
+ollama-data
