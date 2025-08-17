@@ -10,6 +10,9 @@ import { SignalSetupDialog } from '@/components/signal-setup-dialog'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useToast } from '@/hooks/use-toast'
 import type { Summary, Group, FilterOptions, ViewMode, SortOrder, SignalConfig } from '@/types'
+import { EmptyState } from '@/components/empty-state'
+import { deriveEmptyState, FetchErrorInfo } from '@/lib/derive-empty-state'
+import { APP_CONFIG, openExternalUrl } from '@/lib/config'
 
 export function SummaryDashboard() {
   const [summaries, setSummaries] = useState<Summary[]>([])
@@ -36,8 +39,20 @@ export function SummaryDashboard() {
   })
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [showSignalSetup, setShowSignalSetup] = useState(false)
+  const [fetchError, setFetchError] = useState<FetchErrorInfo | undefined>(undefined)
 
   const { toast } = useToast()
+
+  // Helper function to clear filters while preserving time range
+  const clearFilters = useCallback(() => {
+    setFilters((prev: FilterOptions) => ({
+      ...prev,
+      groups: [],
+      searchQuery: '',
+      timeRange: prev.timeRange,
+      activePreset: prev.activePreset
+    }))
+  }, [])
 
   // Restore view mode from localStorage on mount
   useEffect(() => {
@@ -72,41 +87,32 @@ export function SummaryDashboard() {
       // Check both the epoch date and the active preset to determine if this is "all time"
       const isAllTime = filters.timeRange.start.getTime() === 0 && filters.activePreset === 'all-time'
 
-      console.log('=== fetchSummaries Debug ===')
-      console.log('filters.timeRange.start:', filters.timeRange.start)
-      console.log('filters.timeRange.start.getTime():', filters.timeRange.start.getTime())
-      console.log('filters.timeRange.end:', filters.timeRange.end)
-      console.log('filters.activePreset:', filters.activePreset)
-      console.log('isAllTime calculated:', isAllTime)
-      console.log('=== End Debug ===')
-
       if (!isAllTime) {
         const startTime = Math.floor(filters.timeRange.start.getTime() / 1000).toString()
         const endTime = Math.floor(filters.timeRange.end.getTime() / 1000).toString()
-        console.log('Adding time parameters:', { startTime, endTime })
         params.append('start_time', startTime)
         params.append('end_time', endTime)
-      } else {
-        console.log('Skipping time parameters (all-time mode)')
       }
 
       if (filters.groups.length > 0) {
         params.append('groups', filters.groups.join(','))
       }
 
-      console.log('Fetching summaries with params:', params.toString())
       const response = await fetch(`/api/summaries?${params}`)
-      if (!response.ok) throw new Error('Failed to fetch summaries')
+      if (!response.ok) {
+        const msg = `Failed to fetch summaries (${response.status})`
+        throw Object.assign(new Error(msg), { status: response.status })
+      }
 
       const data = await response.json()
-      console.log('Raw summaries response:', data)
       const summariesData = Array.isArray(data) ? data : data.summaries || []
 
       // Group names are now included in the API response
-      console.log('Summaries with group names:', summariesData)
       setSummaries(summariesData)
     } catch (error) {
-      console.error('Error fetching summaries:', error)
+      const err = error as { message?: string; status?: number }
+      console.error('Error fetching summaries:', err)
+      setFetchError({ scope: 'summaries', message: err?.message || 'Failed to fetch summaries', status: err?.status })
       toast({
         title: 'Error',
         description: 'Failed to fetch summaries',
@@ -121,17 +127,21 @@ export function SummaryDashboard() {
       if (!response.ok) throw new Error('Failed to fetch groups')
 
       const data = await response.json()
-      const groupsData = Array.isArray(data) ? data : data.groups || []
+      const groupsData = Array.isArray(data) ? data : (data?.groups || [])
       setGroups(groupsData)
     } catch (error) {
-      console.error('Error fetching groups:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch groups',
-        variant: 'destructive',
-      })
+      // Suppress user-facing error toast during initial onboarding when Signal is not yet registered.
+      // We only surface the toast if Signal *is* registered (so groups should exist) and we're past initial load.
+      console.warn('Groups fetch failed', error)
+      if (signalConfig.isRegistered && !loading) {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch groups',
+          variant: 'destructive',
+        })
+      }
     }
-  }, [toast])
+  }, [toast, signalConfig.isRegistered, loading])
 
   const fetchSignalConfig = useCallback(async () => {
     try {
@@ -150,15 +160,32 @@ export function SummaryDashboard() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        await fetchGroups()
-        await fetchSummaries()
-        await fetchSignalConfig()
+        await Promise.all([
+          (async () => { await fetchGroups() })(),
+          (async () => { await fetchSummaries() })(),
+          (async () => { await fetchSignalConfig() })(),
+        ])
       } finally {
         setLoading(false)
       }
     }
     loadData()
   }, [fetchGroups, fetchSummaries, fetchSignalConfig])
+
+  // Auto-open Signal setup dialog once per session if not registered
+  useEffect(() => {
+    const SESSION_KEY = 'summarizarr-signal-setup-shown'
+
+    if (!loading && !signalConfig.isRegistered) {
+      // Check if we've already shown the dialog this session
+      const hasShownThisSession = sessionStorage.getItem(SESSION_KEY) === 'true'
+
+      if (!hasShownThisSession) {
+        setShowSignalSetup(true)
+        sessionStorage.setItem(SESSION_KEY, 'true')
+      }
+    }
+  }, [loading, signalConfig.isRegistered])
 
   // Fetch summaries when filters change
   useEffect(() => {
@@ -171,7 +198,7 @@ export function SummaryDashboard() {
     try {
       const res = await fetch(`/api/summaries/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Failed to delete summary')
-      setSummaries((prev) => prev.filter((s) => s.id !== id))
+      setSummaries((prev: Summary[]) => prev.filter((s: Summary) => s.id !== id))
       toast({ title: 'Deleted', description: 'Summary removed.' })
     } catch (e) {
       console.error('Delete failed', e)
@@ -224,6 +251,15 @@ export function SummaryDashboard() {
     return <LoadingSpinner />
   }
 
+  // Derive empty state (only when not loading and no summaries or error)
+  const derived = !loading ? deriveEmptyState({
+    signalConfig,
+    summaries,
+    groups,
+    filters,
+    fetchError,
+  }) : null
+
   return (
     <div className="min-h-screen">
       <Header
@@ -244,10 +280,36 @@ export function SummaryDashboard() {
           groups={groups}
         />
 
-        {summaries.length === 0 ? (
-          <div className="text-center py-8 sm:py-12">
-            <p className="text-muted-foreground text-sm sm:text-base">No summaries found</p>
-          </div>
+        {derived ? (
+          <EmptyState
+            variant={derived.variant}
+            primaryLabel={derived.primaryLabel}
+            secondaryLabel={derived.secondaryLabel}
+            meta={derived.meta}
+            onPrimary={() => {
+              if (derived.variant === 'needs-signal') {
+                setShowSignalSetup(true)
+              } else if (derived.variant === 'filters-empty') {
+                clearFilters()
+              } else {
+                // Retry/Refresh
+                setFetchError(undefined)
+                fetchSummaries()
+              }
+            }}
+            onSecondary={derived.secondaryLabel ? () => {
+              if (derived.variant === 'filters-empty' || derived.variant === 'no-results') {
+                // Set to all time
+                setFilters((prev: FilterOptions) => ({
+                  ...prev,
+                  timeRange: { start: new Date(0), end: new Date() },
+                  activePreset: 'all-time',
+                }))
+              } else if (derived.variant === 'needs-signal') {
+                openExternalUrl(APP_CONFIG.DOCS.SIGNAL_SETUP, APP_CONFIG.EXTERNAL_LINKS.GITHUB_REPO)
+              }
+            } : undefined}
+          />
         ) : viewMode === 'timeline' ? (
           <div className="overflow-x-auto">
             <SummaryList summaries={summaries} onDelete={handleDelete} />

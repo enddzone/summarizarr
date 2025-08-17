@@ -48,6 +48,8 @@ export interface FilterOptions {
 export interface SignalConfig {
   phoneNumber: string
   isRegistered: boolean
+  connected?: boolean
+  status?: string
   qrCodeUrl?: string
 }
 

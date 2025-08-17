@@ -43,31 +43,37 @@ func main() {
 		}
 	}
 
-
 	db, err := database.NewDB(cfg.DatabasePath)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			slog.Error("Failed to close database", "error", err)
+		}
+	}()
 
 	if err := db.Init(); err != nil {
 		slog.Error("Failed to initialize database", "error", err)
 		os.Exit(1)
 	}
 
-	// Initialize AI backend based on configuration
-	if cfg.AIProvider == "local" {
+	// Initialize AI backend based on configuration (switch improves readability, satisfies staticcheck suggestion)
+	switch cfg.AIProvider {
+	case "local":
 		slog.Info("AI_PROVIDER=local detected. Using external Ollama server...")
-	} else if cfg.AIProvider == "openai" {
+	case "openai":
 		slog.Info("AI_PROVIDER=openai detected. Initializing OpenAI backend...")
-
-		// Validate required OpenAI configuration
-		if cfg.OpenAIAPIKey == "" {
+		if cfg.OpenAIAPIKey == "" { // Validate required OpenAI configuration
 			slog.Error("OPENAI_API_KEY environment variable is required when AI_PROVIDER=openai")
 			os.Exit(1)
 		}
-	} else {
+	case "groq", "gemini", "claude":
+		// These are validated later in validateConfig/testAIProvider
+		// Log detection for observability
+		slog.Info("Detected AI provider", "provider", cfg.AIProvider)
+	default:
 		slog.Error("Invalid AI_PROVIDER configuration", "provider", cfg.AIProvider, "supported", "local, openai, groq, gemini, claude")
 		os.Exit(1)
 	}
@@ -260,36 +266,36 @@ func validateConfig(cfg *config.Config) error {
 // validateOllamaStartup performs comprehensive validation of the external Ollama server with retry logic
 func validateOllamaStartup(ctx context.Context, cfg *config.Config) error {
 	client := ollama.NewClient(cfg.OllamaHost, cfg.LocalModel)
-	
+
 	// Implement retry logic for server connectivity
 	maxRetries := 5
 	retryInterval := 2 * time.Second
-	
+
 	slog.Info("Validating Ollama server startup", "host", cfg.OllamaHost, "model", cfg.LocalModel, "max_retries", maxRetries)
-	
+
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		// Create a timeout context for each validation attempt
 		validateCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		
+
 		// Attempt comprehensive validation
 		err := client.ValidateExternalOllama(validateCtx)
 		cancel()
-		
+
 		if err == nil {
 			slog.Info("Ollama startup validation successful", "attempt", attempt, "total_attempts", maxRetries)
 			return nil
 		}
-		
+
 		lastErr = err
-		
+
 		if attempt < maxRetries {
-			slog.Warn("Ollama validation failed, retrying...", 
-				"attempt", attempt, 
+			slog.Warn("Ollama validation failed, retrying...",
+				"attempt", attempt,
 				"max_retries", maxRetries,
 				"retry_in_seconds", int(retryInterval.Seconds()),
 				"error", err)
-			
+
 			// Wait before retrying, but respect context cancellation
 			select {
 			case <-ctx.Done():
@@ -303,8 +309,8 @@ func validateOllamaStartup(ctx context.Context, cfg *config.Config) error {
 			}
 		}
 	}
-	
+
 	// If we get here, all attempts failed
-	return fmt.Errorf("ollama validation failed after %d attempts. Last error: %w\n\nCommon solutions:\n1. Start Ollama: 'ollama serve'\n2. Pull the model: 'ollama pull %s'\n3. Check Ollama is running on the correct host: %s", 
+	return fmt.Errorf("ollama validation failed after %d attempts. Last error: %w\n\nCommon solutions:\n1. Start Ollama: 'ollama serve'\n2. Pull the model: 'ollama pull %s'\n3. Check Ollama is running on the correct host: %s",
 		maxRetries, lastErr, cfg.LocalModel, cfg.OllamaHost)
 }

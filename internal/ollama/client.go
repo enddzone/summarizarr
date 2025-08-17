@@ -101,7 +101,11 @@ func (c *Client) ListModels(ctx context.Context) (*ListModelsResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to send list request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Error("Failed to close ListModels response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("list request failed with status: %d", resp.StatusCode)
@@ -177,7 +181,11 @@ func (c *Client) performChatCompletion(ctx context.Context, chatReq ChatCompleti
 	if err != nil {
 		return "", fmt.Errorf("failed to send chat request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Error("Failed to close chat response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -207,7 +215,11 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("health check failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Error("Failed to close health check response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("health check failed with status: %d", resp.StatusCode)

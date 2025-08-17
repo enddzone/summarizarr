@@ -14,14 +14,13 @@ import (
 
 // ProviderTestCase represents a test case for provider-specific validation
 type ProviderTestCase struct {
-	name             string
-	provider         string
-	expectedModel    string
-	expectedAPIKey   string
-	expectedBaseURL  string
-	cfg              *config.Config
-	validateRequest  func(t *testing.T, r *http.Request)
-	validateResponse func(t *testing.T, response string)
+	name            string
+	provider        string
+	expectedModel   string
+	expectedAPIKey  string
+	expectedBaseURL string
+	cfg             *config.Config
+	validateRequest func(t *testing.T, r *http.Request)
 }
 
 // TestProviderRequestFormat validates that each provider sends correctly formatted requests
@@ -146,7 +145,10 @@ func TestProviderRequestFormat(t *testing.T) {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(mockResp)
+				if err := json.NewEncoder(w).Encode(mockResp); err != nil {
+					// Fail the parent test if encoding fails
+					t.Errorf("Failed to encode mock response: %v", err)
+				}
 			}))
 			defer server.Close()
 
@@ -394,7 +396,9 @@ func TestProviderResponseFormat(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(tc.mockResponse)
+				if err := json.NewEncoder(w).Encode(tc.mockResponse); err != nil {
+					t.Errorf("Failed to encode mock response: %v", err)
+				}
 			}))
 			defer server.Close()
 
@@ -515,7 +519,9 @@ func TestProviderErrorResponses(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.statusCode)
-				w.Write([]byte(tc.errorBody))
+				if _, err := w.Write([]byte(tc.errorBody)); err != nil {
+					t.Errorf("Failed to write error body: %v", err)
+				}
 			}))
 			defer server.Close()
 

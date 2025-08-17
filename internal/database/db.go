@@ -64,7 +64,11 @@ func (db *DB) migrateSchema() error {
 	if err != nil {
 		return fmt.Errorf("failed to get table info: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Error("Failed to close rows", "error", err, "context", "migrateSchema table_info(messages)")
+		}
+	}()
 
 	existingColumns := make(map[string]bool)
 	for rows.Next() {
@@ -113,8 +117,8 @@ func (db *DB) SaveMessage(msg *signal.Envelope) error {
 	// Extract message content and group info from either DataMessage or SyncMessage
 	var messageText string
 	var groupInfo *signal.GroupInfo
-	var timestamp int64 = msg.Timestamp
-	var messageType string = "message"
+	timestamp := msg.Timestamp
+	messageType := "message"
 	var quote *signal.Quote
 	var reaction *signal.Reaction
 
@@ -268,7 +272,11 @@ ORDER BY m.timestamp ASC
 	if err != nil {
 		return nil, fmt.Errorf("failed to query messages: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Error("Failed to close rows", "error", err, "context", "GetMessagesForSummarization")
+		}
+	}()
 
 	var messages []MessageForSummary
 	for rows.Next() {
@@ -289,7 +297,11 @@ func (db *DB) GetGroups() ([]int64, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to query groups: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Error("Failed to close rows", "error", err, "context", "GetGroups")
+		}
+	}()
 
 	var groups []int64
 	for rows.Next() {
@@ -401,7 +413,11 @@ func (db *DB) GetSummariesWithFilters(search, groups, startTimeStr, endTimeStr, 
 		slog.Error("Failed to execute GetSummariesWithFilters query", "error", err)
 		return nil, fmt.Errorf("failed to query summaries: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Error("Failed to close rows", "error", err, "context", "GetSummariesWithFilters")
+		}
+	}()
 
 	var summaries []Summary
 	rowCount := 0

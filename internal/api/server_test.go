@@ -18,7 +18,11 @@ func TestGetSummariesEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer testDB.Close()
+	defer func() {
+		if err := testDB.Close(); err != nil {
+			t.Fatalf("Failed to close test database: %v", err)
+		}
+	}()
 
 	// Create schema (full schema from schema.sql)
 	schema := `
@@ -179,7 +183,11 @@ func TestGetSummariesEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer testDB.Close()
+	defer func() {
+		if err := testDB.Close(); err != nil {
+			t.Fatalf("Failed to close test database: %v", err)
+		}
+	}()
 
 	// Create schema (full schema from schema.sql)
 	schema := `

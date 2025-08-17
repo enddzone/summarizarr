@@ -10,10 +10,12 @@ COPY web/package*.json ./
 RUN npm ci
 
 # Copy source code
+# Add build arg to bust cache when frontend changes
+ARG FRONTEND_CACHE_BUST=1
 COPY web/ ./
 
-# Build for production
-RUN npm run build
+# Build for production (use production config)
+RUN cp next.config.prod.mjs next.config.mjs && npm run build
 
 # Stage 2: Build Go backend
 FROM golang:1.24-alpine AS backend-builder
@@ -24,10 +26,15 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
-COPY . .
+# Copy source code (excluding static assets to prevent cache conflicts)
+COPY cmd/ cmd/
+COPY internal/ internal/
+COPY schema.sql .
 
-# Copy frontend build output to embed location
+# Remove any existing static assets to ensure clean state
+RUN rm -rf internal/frontend/static
+
+# Copy fresh frontend build output to embed location - ensures latest assets
 COPY --from=frontend-builder /app/web/out internal/frontend/static/
 
 # Build static Go binary with version information

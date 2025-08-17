@@ -129,7 +129,10 @@ func createMockOpenAIServer(t *testing.T, expectedModel string, response string)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(mockResp)
+		if err := json.NewEncoder(w).Encode(mockResp); err != nil {
+			// Tests should fail explicitly if encoding fails
+			t.Errorf("Failed to encode mock response: %v", err)
+		}
 	}))
 }
 
@@ -403,7 +406,10 @@ func TestProviderErrorHandling(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if tt.serverError {
 					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte(`{"error": {"message": "Internal server error"}}`))
+					if _, err := w.Write([]byte(`{"error": {"message": "Internal server error"}}`)); err != nil {
+						// Fail test if we cannot write error body
+						t.Errorf("Failed to write error body: %v", err)
+					}
 					return
 				}
 			}))

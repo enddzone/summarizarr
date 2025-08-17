@@ -58,12 +58,18 @@ func (c *Client) Listen(ctx context.Context) error {
 		return fmt.Errorf("failed to dial websocket after %d retries: %w", maxRetries, err)
 	}
 
-	defer c.conn.Close(websocket.StatusInternalError, "internal error")
+	defer func() {
+		if err := c.conn.Close(websocket.StatusInternalError, "internal error"); err != nil {
+			slog.Error("Failed to close websocket connection", "error", err)
+		}
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
-			c.conn.Close(websocket.StatusNormalClosure, "")
+			if err := c.conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+				slog.Error("Failed to close websocket connection gracefully", "error", err)
+			}
 			return nil
 		default:
 			messageType, data, err := c.conn.Read(ctx)

@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
+import { useSignalStatusPolling } from '@/hooks/use-signal-status-polling'
 import type { SignalConfig } from '@/types'
 
 interface SignalSetupDialogProps {
@@ -25,11 +26,11 @@ interface SignalSetupDialogProps {
   onConfigUpdate: (config: SignalConfig) => void
 }
 
-export function SignalSetupDialog({ 
-  open, 
-  onOpenChange, 
-  signalConfig, 
-  onConfigUpdate 
+export function SignalSetupDialog({
+  open,
+  onOpenChange,
+  signalConfig,
+  onConfigUpdate
 }: SignalSetupDialogProps) {
   const [phoneNumber, setPhoneNumber] = useState(signalConfig.phoneNumber)
   const [isLoading, setIsLoading] = useState(false)
@@ -38,6 +39,26 @@ export function SignalSetupDialog({
   )
   const [qrCodeUrl, setQrCodeUrl] = useState(signalConfig.qrCodeUrl || '')
   const { toast } = useToast()
+
+  // Use polling hook during QR step
+  const { isPolling, error: pollingError } = useSignalStatusPolling(
+    step === 'qr',
+    (data) => {
+      // On successful registration
+      onConfigUpdate({
+        phoneNumber: data.phoneNumber,
+        isRegistered: true,
+        connected: data.connected,
+        status: data.status,
+      })
+      setStep('complete')
+      toast({
+        title: 'Success',
+        description: 'Signal registration detected automatically!',
+        variant: 'default',
+      })
+    }
+  )
 
   const handleRegisterPhone = async () => {
     if (!phoneNumber.trim()) {
@@ -60,7 +81,7 @@ export function SignalSetupDialog({
       if (!response.ok) throw new Error('Registration failed')
 
       const data = await response.json()
-      
+
       if (data.qrCodeUrl) {
         setQrCodeUrl(data.qrCodeUrl)
         setStep('qr')
@@ -90,7 +111,7 @@ export function SignalSetupDialog({
       if (!response.ok) throw new Error('Status check failed')
 
       const data = await response.json()
-      
+
       if (data.isRegistered) {
         onConfigUpdate({
           phoneNumber: phoneNumber.trim(),
@@ -138,9 +159,9 @@ export function SignalSetupDialog({
       <Card>
         <CardContent className="flex flex-col items-center space-y-4 p-6">
           {qrCodeUrl ? (
-            <img 
-              src={qrCodeUrl} 
-              alt="Signal QR Code" 
+            <img
+              src={qrCodeUrl}
+              alt="Signal QR Code"
               className="w-48 h-48 border rounded-lg"
             />
           ) : (
@@ -153,13 +174,26 @@ export function SignalSetupDialog({
             <p className="text-sm text-muted-foreground">
               Open Signal on your phone and scan this QR code to link your device
             </p>
+            {isPolling && (
+              <div className="flex items-center justify-center space-x-2 mt-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-xs text-muted-foreground">
+                  Waiting for registration...
+                </span>
+              </div>
+            )}
+            {pollingError && (
+              <p className="text-xs text-destructive mt-2">
+                {pollingError}
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
-      
-      <Button 
-        onClick={handleCheckStatus} 
-        disabled={isLoading}
+
+      <Button
+        onClick={handleCheckStatus}
+        disabled={isLoading || isPolling}
         className="w-full"
       >
         {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -237,7 +271,7 @@ export function SignalSetupDialog({
               </Button>
             </>
           )}
-          
+
           {step === 'qr' && (
             <>
               <Button variant="outline" onClick={handleReset}>
@@ -248,7 +282,7 @@ export function SignalSetupDialog({
               </Button>
             </>
           )}
-          
+
           {step === 'complete' && (
             <>
               <Button variant="outline" onClick={handleReset}>

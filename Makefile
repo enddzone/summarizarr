@@ -40,11 +40,10 @@ backend-bg: ## Run Go backend in background with local config
 
 frontend: ## Run Next.js frontend locally with hot reload
 	@echo "$(YELLOW)Starting Next.js frontend with hot reload...$(NC)"
-	cd web && npm install && cp next.config.dev.mjs next.config.mjs && npm run dev
+	cd web && npm install && npm run dev
 
 frontend-bg: ## Run Next.js frontend in background
 	@echo "$(YELLOW)Starting Next.js frontend in background...$(NC)"
-	@cd web && cp next.config.dev.mjs next.config.mjs
 	@cd web && ( nohup npm run dev > ../frontend.log 2>&1 & echo $$! > ../frontend.pid )
 	@echo "$(GREEN)Frontend started in background (PID: $$(cat frontend.pid))$(NC)"
 
@@ -148,7 +147,12 @@ test-frontend: ## Test Next.js frontend
 
 build-frontend: ## Build Next.js frontend and copy to internal/frontend/static/
 	@echo "$(YELLOW)Building Next.js frontend...$(NC)"
-	cd web && npm install && npm run build
+	cd web && npm install
+	@echo "$(YELLOW)Building with production config for static export...$(NC)"
+	cd web && cp next.config.mjs next.config.mjs.bak
+	cd web && cp next.config.prod.mjs next.config.mjs
+	cd web && npm run build
+	cd web && mv next.config.mjs.bak next.config.mjs
 	@echo "$(YELLOW)Copying frontend build to internal/frontend/static/...$(NC)"
 	rm -rf internal/frontend/static/
 	cp -r web/out/ internal/frontend/static/

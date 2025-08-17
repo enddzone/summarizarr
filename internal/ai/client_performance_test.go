@@ -138,7 +138,7 @@ func BenchmarkSubstituteUserNames_Small(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client.substituteUserNames(summary, messages)
+		_, _ = client.substituteUserNames(summary, messages)
 	}
 }
 
@@ -175,7 +175,7 @@ func BenchmarkSubstituteUserNames_Large(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client.substituteUserNames(summary, messages)
+		_, _ = client.substituteUserNames(summary, messages)
 	}
 }
 

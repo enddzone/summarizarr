@@ -29,9 +29,6 @@ var (
 	maxSummarySize = 50 * 1024 // 50KB
 	// Timeout for regex operations
 	regexTimeout = 5 * time.Second
-
-	// Standard timeout for all AI provider HTTP clients
-	standardClientTimeout = 120 * time.Second
 )
 
 // SummarizationPrompt is the template used for all LLM backends
