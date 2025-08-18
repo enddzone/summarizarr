@@ -7,12 +7,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"summarizarr/internal/database"
 	"summarizarr/internal/version"
@@ -26,6 +30,18 @@ type CacheConfig struct {
 	NoCache        bool // Disable caching
 	UseETag        bool // Enable ETag generation
 }
+
+// Security constants for QR code proxy
+const (
+	maxDeviceNameLength = 50
+	maxResponseSize     = 5 * 1024 * 1024 // 5MB limit for response body
+	defaultQRTimeout    = 30 * time.Second
+	maxRetries          = 3
+	retryDelay          = 1 * time.Second
+)
+
+// Device name validation regex - only alphanumeric, hyphens, underscores
+var deviceNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // Server is the API server.
 type Server struct {
@@ -103,6 +119,7 @@ func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...
 	mux.HandleFunc("/api/signal/config", s.handleSignalConfig)
 	mux.HandleFunc("/api/signal/register", s.handleSignalRegister)
 	mux.HandleFunc("/api/signal/status", s.handleSignalStatus)
+	mux.HandleFunc("/api/signal/qrcode", s.handleSignalQrCode)
 	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/health", s.handleHealth)
 
@@ -630,9 +647,6 @@ func (s *Server) handleSignalRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get Signal CLI URL
-	signalURL := getSignalURL()
-
 	// Check if already registered first
 	if s.checkSignalRegistration(req.PhoneNumber) {
 		response := registerResponse{
@@ -648,7 +662,8 @@ func (s *Server) handleSignalRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate QR code for device linking (recommended approach)
-	qrURL := fmt.Sprintf("http://%s/v1/qrcodelink?device_name=summarizarr", signalURL)
+	// Use our proxy endpoint instead of direct Signal CLI URL for frontend compatibility
+	qrURL := "/api/signal/qrcode?device_name=summarizarr"
 
 	response := registerResponse{
 		QrCodeUrl:    qrURL,
@@ -708,6 +723,123 @@ func (s *Server) handleSignalStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.InfoContext(r.Context(), "Successfully returned Signal status", "isRegistered", isRegistered)
+}
+
+// handleSignalQrCode proxies QR code requests to Signal CLI with security enhancements
+func (s *Server) handleSignalQrCode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	slog.InfoContext(r.Context(), "Handling GET /signal/qrcode request")
+
+	// Get Signal CLI URL
+	signalURL := getSignalURL()
+
+	// Get and validate device name from query parameters
+	deviceName := r.URL.Query().Get("device_name")
+	if deviceName == "" {
+		deviceName = "summarizarr"
+	}
+
+	// Validate device name for security
+	if err := validateDeviceName(deviceName); err != nil {
+		slog.WarnContext(r.Context(), "Invalid device name provided", "device_name", deviceName, "error", err)
+		http.Error(w, fmt.Sprintf("invalid device name: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// URL-encode the device name to prevent injection
+	encodedDeviceName := url.QueryEscape(deviceName)
+
+	// Build the Signal CLI QR code URL with proper encoding
+	qrCodeURL := fmt.Sprintf("http://%s/v1/qrcodelink?device_name=%s", signalURL, encodedDeviceName)
+
+	// Attempt the request with retry logic
+	var resp *http.Response
+	var err error
+	timeout := getQRTimeout()
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		// Create a new request to Signal CLI
+		proxyReq, reqErr := http.NewRequestWithContext(r.Context(), "GET", qrCodeURL, nil)
+		if reqErr != nil {
+			slog.ErrorContext(r.Context(), "Failed to create proxy request", "error", reqErr, "attempt", attempt)
+			if attempt == maxRetries {
+				http.Error(w, "failed to create proxy request", http.StatusInternalServerError)
+				return
+			}
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		// Forward the request to Signal CLI with configurable timeout
+		client := &http.Client{Timeout: timeout}
+		resp, err = client.Do(proxyReq)
+		if err != nil {
+			slog.WarnContext(r.Context(), "Failed to proxy QR code request", "error", err, "url", qrCodeURL, "attempt", attempt)
+			if attempt == maxRetries {
+				http.Error(w, "failed to fetch QR code after retries", http.StatusBadGateway)
+				return
+			}
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		// Success - break out of retry loop
+		break
+	}
+
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			slog.ErrorContext(r.Context(), "Failed to close QR code response body", "error", cerr)
+		}
+	}()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		slog.ErrorContext(r.Context(), "Signal CLI returned non-200 status for QR code", "status", resp.StatusCode, "url", qrCodeURL)
+		http.Error(w, "QR code generation failed", resp.StatusCode)
+		return
+	}
+
+	// Copy only safe headers from Signal CLI response
+	for name, values := range resp.Header {
+		if isSafeHeader(name) {
+			for _, value := range values {
+				w.Header().Add(name, value)
+			}
+		}
+	}
+
+	// Copy status code
+	w.WriteHeader(resp.StatusCode)
+
+	// Copy response body with size limit to prevent memory exhaustion
+	limitedReader := io.LimitReader(resp.Body, maxResponseSize)
+	bytesWritten, err := io.Copy(w, limitedReader)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "Failed to copy QR code response", "error", err)
+		return
+	}
+
+	// Log if we hit the size limit
+	if bytesWritten == maxResponseSize {
+		slog.WarnContext(r.Context(), "QR code response truncated due to size limit", "bytes_written", bytesWritten, "limit", maxResponseSize)
+	}
+
+	slog.InfoContext(r.Context(), "Successfully proxied QR code request",
+		"device_name", deviceName,
+		"bytes_written", bytesWritten,
+		"attempts", func() int {
+			for i := 1; i <= maxRetries; i++ {
+				if err == nil {
+					return i
+				}
+			}
+			return maxRetries
+		}())
 }
 
 // handleVersion returns version information
@@ -786,6 +918,67 @@ func getSignalURL() string {
 	signalURL = strings.TrimPrefix(signalURL, "https://")
 
 	return signalURL
+}
+
+// validateDeviceName validates the device name parameter for QR code generation
+func validateDeviceName(deviceName string) error {
+	if deviceName == "" {
+		return fmt.Errorf("device name cannot be empty")
+	}
+
+	if len(deviceName) > maxDeviceNameLength {
+		return fmt.Errorf("device name too long (max %d characters)", maxDeviceNameLength)
+	}
+
+	if !deviceNameRegex.MatchString(deviceName) {
+		return fmt.Errorf("device name can only contain alphanumeric characters, hyphens, and underscores")
+	}
+
+	return nil
+}
+
+// getQRTimeout returns the configured timeout for QR code requests
+func getQRTimeout() time.Duration {
+	if timeoutStr := os.Getenv("QR_TIMEOUT_SECONDS"); timeoutStr != "" {
+		if seconds, err := strconv.Atoi(timeoutStr); err == nil && seconds > 0 {
+			return time.Duration(seconds) * time.Second
+		}
+	}
+	return defaultQRTimeout
+}
+
+// isSafeHeader checks if a header should be copied from the upstream response
+func isSafeHeader(headerName string) bool {
+	// Convert to lowercase for case-insensitive comparison
+	name := strings.ToLower(headerName)
+
+	// Headers safe to copy
+	safeHeaders := map[string]bool{
+		"content-type":     true,
+		"content-length":   true,
+		"cache-control":    true,
+		"expires":          true,
+		"last-modified":    true,
+		"etag":             true,
+		"content-encoding": true,
+	}
+
+	// Block potentially sensitive headers
+	blockedHeaders := map[string]bool{
+		"authorization":   true,
+		"cookie":          true,
+		"set-cookie":      true,
+		"x-forwarded-for": true,
+		"x-real-ip":       true,
+		"x-api-key":       true,
+		"server":          true,
+	}
+
+	if blockedHeaders[name] {
+		return false
+	}
+
+	return safeHeaders[name]
 }
 
 // validateSignalURL validates that the Signal URL is reachable
