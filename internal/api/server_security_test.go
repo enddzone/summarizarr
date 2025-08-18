@@ -36,7 +36,7 @@ func TestValidateAndCleanPath_SecurityTests(t *testing.T) {
 			expectErr: false,
 			desc:      "Valid root path",
 		},
-		
+
 		// Directory traversal attempts
 		{
 			name:      "traversal_dotdot",
@@ -74,7 +74,7 @@ func TestValidateAndCleanPath_SecurityTests(t *testing.T) {
 			expectErr: true,
 			desc:      "Backslash directory traversal (Windows style)",
 		},
-		
+
 		// Null byte injection
 		{
 			name:      "null_byte",
@@ -82,7 +82,7 @@ func TestValidateAndCleanPath_SecurityTests(t *testing.T) {
 			expectErr: true,
 			desc:      "Null byte injection attack",
 		},
-		
+
 		// Hidden file access
 		{
 			name:      "hidden_file",
@@ -102,7 +102,7 @@ func TestValidateAndCleanPath_SecurityTests(t *testing.T) {
 			expectErr: true,
 			desc:      "Access to .git directory",
 		},
-		
+
 		// File extension attacks
 		{
 			name:      "executable_file",
@@ -122,7 +122,7 @@ func TestValidateAndCleanPath_SecurityTests(t *testing.T) {
 			expectErr: true,
 			desc:      "Backup file access",
 		},
-		
+
 		// Edge cases
 		{
 			name:      "empty_path",
@@ -147,7 +147,7 @@ func TestValidateAndCleanPath_SecurityTests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := validateAndCleanPath(tt.input)
-			
+
 			if tt.expectErr {
 				if err == nil {
 					t.Errorf("Expected error for %s (%s), but got none. Result: %s", tt.input, tt.desc, result)
@@ -178,11 +178,11 @@ func TestIsAllowedFileExtension_SecurityTests(t *testing.T) {
 		{"ico", "favicon.ico", true, "ICO files should be allowed"},
 		{"woff", "font.woff", true, "WOFF fonts should be allowed"},
 		{"no_extension", "robots", true, "Files without extension should be allowed for SPA routing"},
-		
+
 		// Case insensitivity
 		{"html_upper", "index.HTML", true, "Uppercase extensions should work"},
 		{"css_mixed", "style.Css", true, "Mixed case extensions should work"},
-		
+
 		// Disallowed extensions
 		{"php", "script.php", false, "PHP files should be blocked"},
 		{"sh", "script.sh", false, "Shell scripts should be blocked"},
@@ -195,7 +195,7 @@ func TestIsAllowedFileExtension_SecurityTests(t *testing.T) {
 		{"log", "access.log", false, "Log files should be blocked"},
 		{"bak", "index.html.bak", false, "Backup files should be blocked"},
 		{"tmp", "temp.tmp", false, "Temporary files should be blocked"},
-		
+
 		// Double extensions
 		{"double_ext", "file.php.txt", false, "Files with disallowed extension anywhere should be blocked"},
 	}
@@ -203,9 +203,9 @@ func TestIsAllowedFileExtension_SecurityTests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := isAllowedFileExtension(tt.path)
-			
+
 			if result != tt.expected {
-				t.Errorf("isAllowedFileExtension(%s) = %v, expected %v (%s)", 
+				t.Errorf("isAllowedFileExtension(%s) = %v, expected %v (%s)",
 					tt.path, result, tt.expected, tt.desc)
 			}
 		})
