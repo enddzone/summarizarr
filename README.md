@@ -77,10 +77,14 @@ cp .env.example .env
 # Edit the .env file and set your Signal phone number:
 # SIGNAL_PHONE_NUMBER=+1234567890
 
-# 3. Start services
+# 3. Configure AI
+# Edit the .env file and update your OpenAI api key:
+# OPENAI_API_KEY=sk-my-api-key
+
+# 4. Start services
 docker compose up -d
 
-# 4. Access web UI: http://localhost:8081
+# 5. Access web UI: http://localhost:8081
 ```
 
 ### Single Container
@@ -90,7 +94,8 @@ docker run -d \
   --name summarizarr \
   -p 8081:8081 \
   -e SIGNAL_PHONE_NUMBER="+1234567890" \
-  -e AI_PROVIDER=local \
+  -e AI_PROVIDER=openai \
+  -e OPENAI_API_KEY=sk-openai-api-key \
   -v summarizarr-data:/data \
   ghcr.io/enddzone/summarizarr:latest
 ```
@@ -137,7 +142,7 @@ CLAUDE_BASE_URL=http://localhost:8000/openai/v1
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SIGNAL_PHONE_NUMBER` | - | **Required** Phone number for Signal |
-| `AI_PROVIDER` | `local` | AI provider: `local`, `openai`, `groq`, `gemini`, `claude` |
+| `AI_PROVIDER` | `openai` | AI provider: `local`, `openai`, `groq`, `gemini`, `claude` |
 | `SUMMARIZATION_INTERVAL` | `12h` | Summary frequency (30m, 1h, 6h, 1d) |
 | `DATABASE_PATH` | `/app/data/summarizarr.db` | SQLite database location |
 | `LOG_LEVEL` | `INFO` | Logging verbosity |
