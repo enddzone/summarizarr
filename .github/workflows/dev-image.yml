@@ -66,7 +66,7 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ matrix.arch }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-$SHORT_SHA-${{ matrix.arch }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ env.SHORT_SHA }}-${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.arch }}-dev
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}-dev
@@ -110,12 +110,12 @@ jobs:
       - name: Create multi-platform dev-shortsha manifest
         run: |
           docker buildx imagetools create \
-            --tag "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${SHORT_SHA}" \
-            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${SHORT_SHA}-amd64" \
-            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${SHORT_SHA}-arm64"
+            --tag "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ env.SHORT_SHA }}" \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ env.SHORT_SHA }}-amd64" \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ env.SHORT_SHA }}-arm64"
 
       - name: Inspect manifest (dev)
         run: docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev
 
       - name: Inspect manifest (dev-shortsha)
-        run: docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${SHORT_SHA}
+        run: docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-${{ env.SHORT_SHA }}
