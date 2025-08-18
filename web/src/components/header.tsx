@@ -178,10 +178,25 @@ export function Header({
             </Button>
 
             {/* Signal Setup */}
-            <Button variant="outline" size="sm" onClick={onSignalSetup}>
-              <Settings className="h-4 w-4 mr-2" />
-              <span className="hidden lg:inline">Signal Setup</span>
-            </Button>
+            <div className="relative">
+              {!signalConfig.isRegistered && (
+                <div className="absolute -inset-1 rounded-md bg-gradient-to-r from-amber-400 via-orange-500 to-red-500 opacity-60 dark:opacity-75 blur-sm animate-pulse"></div>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onSignalSetup}
+                className={`relative ${!signalConfig.isRegistered ? 'border-amber-400 dark:border-orange-700 bg-amber-100 dark:bg-orange-950 hover:bg-amber-200 dark:hover:bg-orange-900 text-amber-800 dark:text-orange-200' : ''}`}
+              >
+                <Settings className={`h-4 w-4 mr-2 ${!signalConfig.isRegistered ? 'text-amber-700 dark:text-orange-400' : ''}`} />
+                <span className="hidden lg:inline">Signal Setup</span>
+                {!signalConfig.isRegistered && (
+                  <div className="absolute -top-1 -right-1 h-3 w-3 bg-amber-500 dark:bg-orange-500 rounded-full animate-pulse">
+                    <div className="h-full w-full bg-amber-400 dark:bg-orange-400 rounded-full animate-ping"></div>
+                  </div>
+                )}
+              </Button>
+            </div>
 
             {/* Theme Toggle */}
             <Button

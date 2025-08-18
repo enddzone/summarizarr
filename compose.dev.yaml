@@ -32,6 +32,7 @@ services:
         GIT_COMMIT: dev
         BUILD_TIME: dev
         GOARCH: ${GOARCH:-arm64}
+        FRONTEND_CACHE_BUST: ${FRONTEND_CACHE_BUST:-1}
     image: summarizarr:dev
     container_name: summarizarr-dev
     environment:

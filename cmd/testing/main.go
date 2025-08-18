@@ -29,8 +29,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Override AI_PROVIDER for testing
-	os.Setenv("AI_PROVIDER", backend)
+	// Override AI_PROVIDER for testing (ignore error intentionally; Setenv only fails on invalid key)
+	if err := os.Setenv("AI_PROVIDER", backend); err != nil {
+		fmt.Printf("Warning: failed to set AI_PROVIDER env var: %v\n", err)
+	}
 
 	// Create configuration
 	cfg := config.New()

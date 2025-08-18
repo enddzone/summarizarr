@@ -21,10 +21,10 @@ import (
 
 // CacheConfig defines caching configuration for different file types
 type CacheConfig struct {
-	MaxAge       int  // Cache duration in seconds
+	MaxAge         int  // Cache duration in seconds
 	MustRevalidate bool // Force revalidation
-	NoCache      bool // Disable caching
-	UseETag      bool // Enable ETag generation
+	NoCache        bool // Disable caching
+	UseETag        bool // Enable ETag generation
 }
 
 // Server is the API server.
@@ -69,14 +69,14 @@ func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...
 		SignalURL:      getSignalURL(),
 		ValidateSignal: true,
 	}
-	
+
 	// Apply provided options
 	for _, option := range options {
 		option(opts)
 	}
-	
+
 	slog.Info("Initializing API server", "signal_url", opts.SignalURL, "listen_addr", addr)
-	
+
 	// Validate Signal URL if enabled
 	if opts.ValidateSignal {
 		if err := validateSignalURL(opts.SignalURL); err != nil {
@@ -117,7 +117,7 @@ func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...
 // getCacheConfig returns cache configuration based on file extension
 func getCacheConfig(path string) CacheConfig {
 	ext := strings.ToLower(filepath.Ext(path))
-	
+
 	switch ext {
 	case ".html", ".htm":
 		// HTML files: no-cache, must-revalidate for fresh content
@@ -183,14 +183,14 @@ func setResponseCacheHeaders(w http.ResponseWriter, config CacheConfig, content 
 		}
 		w.Header().Set("Cache-Control", cacheControl)
 	}
-	
+
 	// Generate and set ETag if enabled
 	if config.UseETag && len(content) > 0 {
 		hash := md5.Sum(content)
 		etag := `"` + hex.EncodeToString(hash[:]) + `"`
 		w.Header().Set("ETag", etag)
 	}
-	
+
 	// Set Last-Modified to current time for all resources
 	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
 }
@@ -198,13 +198,13 @@ func setResponseCacheHeaders(w http.ResponseWriter, config CacheConfig, content 
 // getContentType returns the appropriate MIME type for a file path
 func getContentType(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
-	
+
 	// Use mime package for standard detection first
 	contentType := mime.TypeByExtension(ext)
 	if contentType != "" {
 		return contentType
 	}
-	
+
 	// Custom mappings for common web assets
 	switch ext {
 	case ".css":
@@ -239,7 +239,7 @@ func checkConditionalRequest(r *http.Request, etag string) bool {
 		// Simple comparison - in production, this should handle multiple ETags
 		return ifNoneMatch == etag
 	}
-	
+
 	return false
 }
 
@@ -248,24 +248,24 @@ func setAPIResponseHeaders(w http.ResponseWriter, r *http.Request, data []byte, 
 	// Generate ETag for the response data
 	hash := md5.Sum(data)
 	etag := `"` + hex.EncodeToString(hash[:]) + `"`
-	
+
 	// Check conditional request
 	if checkConditionalRequest(r, etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return true // Indicates that response was served from cache
 	}
-	
+
 	// Set cache headers
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
-	
+
 	if cacheSeconds > 0 {
 		w.Header().Set("Cache-Control", fmt.Sprintf("max-age=%d, must-revalidate", cacheSeconds))
 	} else {
 		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 	}
-	
+
 	return false // Indicates that full response should be sent
 }
 
@@ -415,9 +415,13 @@ func (s *Server) handleGetGroups(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to get groups: %v", err), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			slog.ErrorContext(r.Context(), "Failed to close groups rows", "error", cerr)
+		}
+	}()
 
-	var groups []groupResponse
+	groups := []groupResponse{}
 	for rows.Next() {
 		var group groupResponse
 		if err := rows.Scan(&group.ID, &group.Name); err != nil {
@@ -482,8 +486,11 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, summary := range summaries {
-			fmt.Fprintf(w, "%d,%d,\"%s\",%d,%d,%s\n",
-				summary.ID, summary.GroupID, summary.Text, summary.Start, summary.End, summary.CreatedAt)
+			if _, err := fmt.Fprintf(w, "%d,%d,\"%s\",%d,%d,%s\n",
+				summary.ID, summary.GroupID, summary.Text, summary.Start, summary.End, summary.CreatedAt); err != nil {
+				slog.ErrorContext(r.Context(), "Failed to write CSV row", "error", err)
+				return
+			}
 		}
 	default:
 		http.Error(w, "Unsupported format. Use json or csv.", http.StatusBadRequest)
@@ -563,7 +570,11 @@ func (s *Server) checkSignalRegistration(phoneNumber string) bool {
 		slog.Error("Failed to check Signal CLI accounts", "error", err, "url", url)
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			slog.Error("Failed to close accounts response body", "error", cerr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Error("Signal CLI accounts check returned non-200 status", "status", resp.StatusCode, "url", url)
@@ -629,7 +640,10 @@ func (s *Server) handleSignalRegister(w http.ResponseWriter, r *http.Request) {
 			Message:      "Phone number is already registered",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			slog.ErrorContext(r.Context(), "Failed to encode already-registered response", "error", err)
+			http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -766,11 +780,11 @@ func getSignalURL() string {
 	if signalURL == "" {
 		return "localhost:8080"
 	}
-	
+
 	// Remove any protocol prefix for consistency
 	signalURL = strings.TrimPrefix(signalURL, "http://")
 	signalURL = strings.TrimPrefix(signalURL, "https://")
-	
+
 	return signalURL
 }
 
@@ -779,12 +793,12 @@ func validateSignalURL(signalURL string) error {
 	if signalURL == "" {
 		return fmt.Errorf("signal URL is empty")
 	}
-	
+
 	// Basic URL validation - ensure it contains a valid host:port pattern
 	if !strings.Contains(signalURL, ":") {
 		return fmt.Errorf("signal URL must include port (e.g., localhost:8080)")
 	}
-	
+
 	// Test connectivity to the Signal CLI service
 	url := fmt.Sprintf("http://%s/v1/health", signalURL)
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -792,12 +806,16 @@ func validateSignalURL(signalURL string) error {
 	if err != nil {
 		return fmt.Errorf("signal CLI not reachable at %s: %w", signalURL, err)
 	}
-	defer resp.Body.Close()
-	
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			slog.Error("Failed to close health response body", "error", cerr)
+		}
+	}()
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("signal CLI health check failed at %s: status %d", signalURL, resp.StatusCode)
 	}
-	
+
 	return nil
 }
 
@@ -807,46 +825,46 @@ func validateAndCleanPath(urlPath string) (string, error) {
 	if urlPath == "/" {
 		return "", nil // Empty path for root, will be handled by SPA routing
 	}
-	
+
 	// Remove leading slash
 	cleanPath := strings.TrimPrefix(urlPath, "/")
-	
+
 	// Check for directory traversal patterns BEFORE cleaning
 	if strings.Contains(cleanPath, "..") {
 		return "", fmt.Errorf("invalid path: directory traversal attempt")
 	}
-	
+
 	// Use filepath.Clean for proper OS path handling
 	cleanPath = filepath.Clean(cleanPath)
-	
+
 	// Convert back to forward slashes for consistency (filepath.Clean may use OS separator)
 	cleanPath = filepath.ToSlash(cleanPath)
-	
+
 	// Handle single dot (current directory) - this can result from filepath.Clean on traversal attempts
 	if cleanPath == "." {
 		return "", nil // Empty path for SPA routing
 	}
-	
+
 	// Comprehensive directory traversal checks
-	if cleanPath == ".." || 
-		strings.HasPrefix(cleanPath, "../") || 
+	if cleanPath == ".." ||
+		strings.HasPrefix(cleanPath, "../") ||
 		strings.Contains(cleanPath, "/../") ||
 		strings.HasSuffix(cleanPath, "/..") ||
 		strings.Contains(cleanPath, "\\") ||
 		strings.Contains(cleanPath, "\x00") {
 		return "", fmt.Errorf("invalid path: directory traversal attempt")
 	}
-	
+
 	// Ensure path doesn't start with a dot (hidden files), but allow empty paths
 	if cleanPath != "" && strings.HasPrefix(cleanPath, ".") {
 		return "", fmt.Errorf("invalid path: access to hidden files not allowed")
 	}
-	
+
 	// File extension whitelist for security (only for non-empty paths)
 	if cleanPath != "" && !isAllowedFileExtension(cleanPath) {
 		return "", fmt.Errorf("invalid path: file type not allowed")
 	}
-	
+
 	return cleanPath, nil
 }
 
@@ -856,7 +874,7 @@ func isAllowedFileExtension(path string) bool {
 	if !strings.Contains(path, ".") {
 		return true
 	}
-	
+
 	// Allowed extensions for frontend assets
 	allowedExts := []string{
 		".html", ".htm",
@@ -867,7 +885,7 @@ func isAllowedFileExtension(path string) bool {
 		".woff", ".woff2", ".ttf", ".eot",
 		".txt", ".xml",
 	}
-	
+
 	// Blocked extensions that should never be served
 	blockedExts := []string{
 		".php", ".asp", ".aspx", ".jsp",
@@ -877,23 +895,23 @@ func isAllowedFileExtension(path string) bool {
 		".log", ".bak", ".backup", ".tmp", ".temp",
 		".sql", ".db", ".sqlite", ".sqlite3",
 	}
-	
+
 	lowerPath := strings.ToLower(path)
-	
+
 	// Check for blocked extensions anywhere in the filename
 	for _, ext := range blockedExts {
 		if strings.Contains(lowerPath, ext) {
 			return false
 		}
 	}
-	
+
 	// Check if final extension is in allowed list
 	for _, ext := range allowedExts {
 		if strings.HasSuffix(lowerPath, ext) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -980,6 +998,8 @@ func (s *Server) serveFrontend(frontendFS fs.FS) http.Handler {
 			"has_etag", etag != "",
 		)
 
-		w.Write(content)
+		if _, err := w.Write(content); err != nil {
+			slog.ErrorContext(r.Context(), "Failed to write response content", "error", err, "path", originalPath)
+		}
 	})
 }
