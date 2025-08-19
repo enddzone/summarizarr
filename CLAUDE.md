@@ -15,8 +15,10 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 
 **Database Layer**: 
 - SQLite with schema in `schema.sql` 
-- Stores users, groups, messages, and summaries
+- Stores users, groups, messages, summaries, and authentication data
 - Foreign key relationships and automatic migration system
+- Separate auth_users table for web authentication (distinct from Signal users)
+- Session storage for persistent login state
 
 **AI Processing**: 
 - Unified AI client in `internal/ai/client.go` with multi-provider support
@@ -27,7 +29,9 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 
 **API Server**: 
 - HTTP server in `internal/api/server.go` on port 8081
-- RESTful endpoints for summaries, groups, export, and Signal configuration
+- RESTful endpoints for summaries, groups, export, Signal configuration, and authentication
+- Session-based authentication with SQLite storage
+- Protected routes using middleware for authenticated access
 
 **Frontend**: 
 - Next.js 15 application in `web/` directory with dual configuration:
@@ -36,6 +40,7 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 - shadcn/ui components with responsive design
 - Default "Today" date filter for summaries
 - Automatic API proxying from dev server to backend during local development
+- Built-in authentication system with login/logout and protected routes
 
 ## Development Commands
 

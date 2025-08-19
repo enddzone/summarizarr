@@ -14,11 +14,11 @@ RUN npm ci
 ARG FRONTEND_CACHE_BUST=1
 COPY web/ ./
 
-# Build for production (use production config)
-RUN cp next.config.prod.mjs next.config.mjs && npm run build
+# Build for production (static export)
+RUN npm run build
 
 # Stage 2: Build Go backend
-FROM golang:1.24-alpine AS backend-builder
+FROM golang:1.25-alpine AS backend-builder
 
 WORKDIR /app
 
@@ -45,9 +45,9 @@ ARG GOARCH
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH:-amd64} go build \
     -ldflags="-w -s -extldflags '-static' \
-             -X 'summarizarr/internal/version.Version=${VERSION}' \
-             -X 'summarizarr/internal/version.GitCommit=${GIT_COMMIT}' \
-             -X 'summarizarr/internal/version.BuildTime=${BUILD_TIME}'" \
+    -X 'summarizarr/internal/version.Version=${VERSION}' \
+    -X 'summarizarr/internal/version.GitCommit=${GIT_COMMIT}' \
+    -X 'summarizarr/internal/version.BuildTime=${BUILD_TIME}'" \
     -a -installsuffix cgo \
     -o summarizarr \
     ./cmd/summarizarr

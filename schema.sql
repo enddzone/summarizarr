@@ -46,3 +46,23 @@ CREATE TABLE IF NOT EXISTS summaries (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES groups (id)
 );
+
+-- Authentication users table (separate from Signal users)
+CREATE TABLE IF NOT EXISTS auth_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users(email);
+
+-- Sessions table for SCS (session management)
+CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    data BLOB NOT NULL,
+    expiry DATETIME NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expiry);

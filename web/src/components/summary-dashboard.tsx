@@ -13,6 +13,7 @@ import type { Summary, Group, FilterOptions, ViewMode, SortOrder, SignalConfig }
 import { EmptyState } from '@/components/empty-state'
 import { deriveEmptyState, FetchErrorInfo } from '@/lib/derive-empty-state'
 import { APP_CONFIG, openExternalUrl } from '@/lib/config'
+import { apiClient } from '@/lib/api'
 
 export function SummaryDashboard() {
   const [summaries, setSummaries] = useState<Summary[]>([])
@@ -98,14 +99,8 @@ export function SummaryDashboard() {
         params.append('groups', filters.groups.join(','))
       }
 
-      const response = await fetch(`/api/summaries?${params}`)
-      if (!response.ok) {
-        const msg = `Failed to fetch summaries (${response.status})`
-        throw Object.assign(new Error(msg), { status: response.status })
-      }
-
-      const data = await response.json()
-      const summariesData = Array.isArray(data) ? data : data.summaries || []
+      const data = await apiClient.get<Summary[]>(`/api/summaries?${params}`)
+      const summariesData = Array.isArray(data) ? data : []
 
       // Group names are now included in the API response
       setSummaries(summariesData)
@@ -123,11 +118,8 @@ export function SummaryDashboard() {
 
   const fetchGroups = useCallback(async () => {
     try {
-      const response = await fetch('/api/groups')
-      if (!response.ok) throw new Error('Failed to fetch groups')
-
-      const data = await response.json()
-      const groupsData = Array.isArray(data) ? data : (data?.groups || [])
+      const data = await apiClient.get<Group[]>('/api/groups')
+      const groupsData = Array.isArray(data) ? data : []
       setGroups(groupsData)
     } catch (error) {
       // Suppress user-facing error toast during initial onboarding when Signal is not yet registered.
@@ -145,10 +137,7 @@ export function SummaryDashboard() {
 
   const fetchSignalConfig = useCallback(async () => {
     try {
-      const response = await fetch('/api/signal/config')
-      if (!response.ok) throw new Error('Failed to fetch signal config')
-
-      const data = await response.json()
+      const data = await apiClient.get<SignalConfig>('/api/signal/config')
       setSignalConfig(data)
     } catch (error) {
       console.error('Error fetching signal config:', error)
@@ -196,8 +185,7 @@ export function SummaryDashboard() {
 
   const handleDelete = async (id: number) => {
     try {
-      const res = await fetch(`/api/summaries/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to delete summary')
+      await apiClient.delete(`/api/summaries/${id}`)
       setSummaries((prev: Summary[]) => prev.filter((s: Summary) => s.id !== id))
       toast({ title: 'Deleted', description: 'Summary removed.' })
     } catch (e) {
@@ -220,10 +208,13 @@ export function SummaryDashboard() {
         params.append('groups', filters.groups.join(','))
       }
 
-      const response = await fetch(`/api/export?${params}`)
+      const response = await fetch(`/api/export?${params}`, {
+        credentials: 'include'
+      })
       if (!response.ok) throw new Error('Export failed')
 
       const blob = await response.blob()
+      if (!blob) throw new Error('Export failed')
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url

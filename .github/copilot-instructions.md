@@ -5,11 +5,12 @@ Summarizarr is a Signal message summarizer that connects to Signal groups via We
 
 ## Architecture
 - **Signal Integration**: Connects to `signal-cli-rest-api` via WebSocket (`internal/signal/client.go`) to receive real-time messages
-- **Database Layer**: SQLite with schema defined in `schema.sql` - stores users, groups, messages, and summaries
+- **Database Layer**: SQLite with schema defined in `schema.sql` - stores users, groups, messages, summaries, and authentication data
+- **Authentication System**: Session-based web authentication with separate `auth_users` table (distinct from Signal users) and persistent login state stored in `sessions` table
 - **AI Processing**: Unified AI client (`internal/ai/client.go`) with multi-provider support and configurable scheduling (`internal/ai/scheduler.go`)
 - **Backend Abstraction**: Supports local AI (Ollama) and multiple OpenAI-compatible cloud providers with consistent prompt handling
-- **API Server**: Simple HTTP server (`internal/api/server.go`) exposing summaries endpoint on port 8081
-- **Frontend**: Next.js 15 application in `web/` directory with shadcn/ui components, date filtering (default: "Today"), and responsive design
+- **API Server**: HTTP server (`internal/api/server.go`) on port 8081 with authentication middleware and protected routes for summaries, groups, export, and Signal configuration
+- **Frontend**: Next.js 15 application in `web/` directory with shadcn/ui components, date filtering (default: "Today"), responsive design, and built-in authentication with login/logout and protected routes
 - **Docker Setup**: Multi-service compose with signal-cli-rest-api dependency and health checks
 
 ## Go 1.24+ Best Practices
@@ -116,6 +117,37 @@ For local development, copy `.env.example` to `.env` and fill in your values. Th
 
 For local development, copy `.env.example` to `.env` and fill in your values. The Makefile automatically loads `.env` for all local development targets.
 
+### Authentication System
+The application includes a complete web authentication system:
+
+**Backend Components**:
+- **Session Management**: `internal/auth/sessions.go` - SQLite-backed session storage using SCS library
+- **User Management**: `internal/auth/user.go` - User storage with bcrypt password hashing  
+- **Middleware**: `internal/auth/middleware.go` - Authentication middleware for protected routes
+- **API Endpoints**: `internal/api/auth.go` - Login, logout, registration, and user info endpoints
+
+**Database Schema**:
+- **auth_users table**: Stores web authentication users (separate from Signal users)
+- **sessions table**: Stores session data for persistent login state
+- **Indexes**: Email and session expiry indexes for performance
+
+**Frontend Components**:
+- **Auth Context**: `web/src/contexts/auth-context.tsx` - React Context for authentication state
+- **Login Form**: `web/src/components/auth/login-form.tsx` - shadcn/ui login component
+- **Protected Routes**: `web/src/components/auth/protected-route.tsx` - Route protection wrapper
+- **Session Management**: Automatic session checking and credential inclusion
+
+**API Endpoints**:
+- `POST /api/auth/login` - User authentication
+- `POST /api/auth/logout` - Session termination
+- `GET /api/auth/me` - Current user information
+- `POST /api/auth/register` - User registration
+
+**Protected Routes**: All main API endpoints require authentication:
+- `/api/summaries` - Summary data access
+- `/api/groups` - Group information
+- `/api/export` - Data export functionality
+
 ### Modern Go Patterns in Use
 - **Graceful Shutdown**: `signal.NotifyContext` in `main.go`
 - **Embedded Structs**: `database.DB` embeds `*sql.DB`
@@ -131,19 +163,19 @@ For rapid development with hot reload and fast builds, use the local tooling wor
 # Initial setup
 make dev-setup    # Creates .env from .env.example and installs npm deps
 
-# Start all services locally (automatic)
+# Start all services locally (non-blocking with background processes)
 make all          # Starts signal container + Go backend + Next.js frontend in parallel
 
 # Or start services individually
 make signal       # Start signal-cli-rest-api container only
-make backend      # Run Go backend locally (requires signal container)
-make frontend     # Run Next.js frontend with hot reload
+make backend      # Run Go backend locally (blocking)
+make backend-bg   # Run Go backend in background with PID management
+make frontend     # Run Next.js frontend with hot reload (blocking)
+make frontend-bg  # Run Next.js frontend in background with API proxying
 
-# Check service status
-make status       # Shows running status of all services
-
-# Stop everything
-make stop         # Stops all services and containers
+# Process management and monitoring
+make status       # Check service health and URLs
+make stop         # Stop all services and clean up processes
 ```
 
 **Environment Variables**: All local development uses `.env` for configuration. Copy `.env.example` to `.env` and fill in your values.
@@ -153,6 +185,31 @@ make stop         # Stops all services and containers
 - Faster Go compilation (no Docker build)
 - Uses same environment variables from `.env`
 - Signal container still runs in Docker for stability
+- Background process management with PID files and log files
+
+### Process Management
+The Makefile includes sophisticated process management for local development:
+
+**Background Processes**: 
+- `make all` runs backend and frontend as background processes with PID files
+- Backend PID stored in `backend.pid`, frontend PID in `frontend.pid`
+- Log output redirected to `backend.log` and `frontend.log`
+
+**Service Monitoring**:
+- `make status` shows health of all services with URLs
+- Checks signal-cli-rest-api container status
+- Displays backend/frontend process status and service URLs
+
+**Process Cleanup**:
+- `make stop` properly terminates all processes using PID files
+- Removes PID files after stopping processes
+- Stops signal-cli container
+- Data preservation: Database (`./data/`) and Signal config (`./signal-cli-config/`) preserved
+
+**Service URLs**:
+- **Frontend (Development)**: http://localhost:3000 - Next.js dev server with hot reload
+- **Backend API**: http://localhost:8081 - Go backend with embedded frontend
+- **Signal CLI**: http://localhost:8080 - Signal WebSocket service
 
 ### Legacy Docker Development
 ```bash
@@ -191,6 +248,7 @@ make docker       # Equivalent to: docker compose up --build -d
 - Foreign key relationships: messages → users/groups, summaries → groups
 - Timestamps stored as Unix epoch integers
 - Enhanced message support: quotes (quote_id, quote_author_uuid, quote_text), reactions (reaction_emoji, reaction_target_author), message types (regular, quote, reaction)
+- Authentication system: Separate `auth_users` table for web authentication (distinct from Signal users), `sessions` table for persistent login state
 - Schema applied on startup via `db.Init()` reading `schema.sql`
 - Automatic migration system adds missing columns to existing tables
 - Database stored in mounted `./data` directory for persistence
@@ -201,10 +259,12 @@ make docker       # Equivalent to: docker compose up --build -d
 - **Change message filtering**: Modify `SaveMessage` logic in `internal/database/db.go`
 - **Adjust scheduling**: Update interval parsing and ticker logic in scheduler
 - **Frontend changes**: Modify components in `web/src/components/` and pages in `web/src/app/`
+- **Authentication changes**: Modify auth handlers in `internal/api/auth.go` and auth components in `web/src/components/auth/`
 
 ## Frontend Development
 The Next.js 15 frontend is located in the `web/` directory and features:
 - **shadcn/ui components**: Modern UI components for date pickers, filters, and summaries
+- **Authentication system**: Built-in login/logout functionality with protected routes using React Context
 - **Default date filter**: "Today" preset for summary filtering
 - **Responsive design**: Works on desktop and mobile devices
 - **TypeScript**: Fully typed components and API interactions
@@ -214,3 +274,6 @@ The Next.js 15 frontend is located in the `web/` directory and features:
 - `modernc.org/sqlite`: Pure Go SQLite driver
 - `github.com/sashabaranov/go-openai`: OpenAI API client
 - `github.com/coder/websocket`: WebSocket client for Signal API
+- `github.com/alexedwards/scs/v2`: Session management library
+- `github.com/alexedwards/scs/sqlite3store`: SQLite session store for SCS
+- `golang.org/x/crypto`: Cryptographic functions including bcrypt for password hashing

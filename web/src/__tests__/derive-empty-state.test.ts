@@ -1,8 +1,4 @@
 import { deriveEmptyState } from '@/lib/derive-empty-state'
-
-interface TestGroup { id: number; name: string }
-interface TestSummary { id: number; group_id: number; group_name: string; text: string; start: number; end: number }
-interface TestFilters { groups: number[]; timeRange: { start: Date; end: Date }; searchQuery: string; activePreset: string }
 import type { Summary, Group, FilterOptions } from '@/types'
 
 const createSummary = (id: number, group: Group): Summary => ({

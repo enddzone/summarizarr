@@ -44,7 +44,7 @@ frontend: ## Run Next.js frontend locally with hot reload
 
 frontend-bg: ## Run Next.js frontend in background
 	@echo "$(YELLOW)Starting Next.js frontend in background...$(NC)"
-	@cd web && ( nohup npm run dev > ../frontend.log 2>&1 & echo $$! > ../frontend.pid )
+	@cd web && ( [ -d node_modules ] || npm install ) && ( nohup npm run dev > ../frontend.log 2>&1 & echo $$! > ../frontend.pid )
 	@echo "$(GREEN)Frontend started in background (PID: $$(cat frontend.pid))$(NC)"
 
 all: signal ## Start all services locally (signal container + Go backend + Next.js frontend)
