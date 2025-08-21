@@ -59,6 +59,21 @@ func (db *DB) Init() error {
 
 // migrateSchema adds missing columns to existing tables
 func (db *DB) migrateSchema() error {
+	// Migrate messages table
+	if err := db.migrateMessagesTable(); err != nil {
+		return fmt.Errorf("failed to migrate messages table: %w", err)
+	}
+
+	// Migrate summaries table for auth integration
+	if err := db.migrateAuthTables(); err != nil {
+		return fmt.Errorf("failed to migrate auth tables: %w", err)
+	}
+
+	return nil
+}
+
+// migrateMessagesTable adds missing columns to the messages table
+func (db *DB) migrateMessagesTable() error {
 	// Check what columns exist in the messages table
 	rows, err := db.Query("PRAGMA table_info(messages)")
 	if err != nil {
@@ -66,7 +81,7 @@ func (db *DB) migrateSchema() error {
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			slog.Error("Failed to close rows", "error", err, "context", "migrateSchema table_info(messages)")
+			slog.Error("Failed to close rows", "error", err, "context", "migrateMessagesTable table_info(messages)")
 		}
 	}()
 
@@ -101,6 +116,73 @@ func (db *DB) migrateSchema() error {
 			if _, err := db.Exec(alterSQL); err != nil {
 				return fmt.Errorf("failed to add column %s: %w", column, err)
 			}
+		}
+	}
+
+	return nil
+}
+
+// migrateAuthTables adds user_id columns for authentication integration
+func (db *DB) migrateAuthTables() error {
+	// Check summaries table
+	if err := db.addColumnIfNotExists("summaries", "user_id", "TEXT"); err != nil {
+		return fmt.Errorf("failed to add user_id to summaries: %w", err)
+	}
+
+	// Check groups table
+	if err := db.addColumnIfNotExists("groups", "created_by", "TEXT"); err != nil {
+		return fmt.Errorf("failed to add created_by to groups: %w", err)
+	}
+
+	// Create indexes for performance if they don't exist
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_summaries_user_id ON summaries(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_groups_created_by ON groups(created_by)",
+	}
+
+	for _, indexSQL := range indexes {
+		if _, err := db.Exec(indexSQL); err != nil {
+			slog.Warn("Failed to create index", "sql", indexSQL, "error", err)
+			// Continue - indexes are optional for functionality
+		}
+	}
+
+	return nil
+}
+
+// addColumnIfNotExists adds a column to a table if it doesn't already exist
+func (db *DB) addColumnIfNotExists(tableName, columnName, columnDef string) error {
+	// Check what columns exist in the table
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	if err != nil {
+		return fmt.Errorf("failed to get table info for %s: %w", tableName, err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			slog.Error("Failed to close rows", "error", err, "context", fmt.Sprintf("addColumnIfNotExists table_info(%s)", tableName))
+		}
+	}()
+
+	existingColumns := make(map[string]bool)
+	for rows.Next() {
+		var cid int
+		var name, dataType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("failed to scan table info for %s: %w", tableName, err)
+		}
+		existingColumns[name] = true
+	}
+
+	// Add column if it doesn't exist
+	if !existingColumns[columnName] {
+		alterSQL := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableName, columnName, columnDef)
+		slog.Info("Adding missing column", "table", tableName, "column", columnName)
+		if _, err := db.Exec(alterSQL); err != nil {
+			return fmt.Errorf("failed to add column %s to %s: %w", columnName, tableName, err)
 		}
 	}
 

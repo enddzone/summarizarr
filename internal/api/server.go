@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"summarizarr/internal/auth"
 	"summarizarr/internal/database"
 	"summarizarr/internal/version"
 	"time"
@@ -45,8 +46,10 @@ var deviceNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // Server is the API server.
 type Server struct {
-	db     *database.DB
-	server *http.Server
+	db             *database.DB
+	server         *http.Server
+	sessionManager *auth.SessionManager
+	authHandlers   *AuthHandlers
 }
 
 // ServerOptions holds configuration options for the server
@@ -103,19 +106,45 @@ func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...
 	}
 
 	mux := http.NewServeMux()
+	
+	// Initialize auth components
+	sessionManager := auth.NewSessionManager(db)
+	userStore := auth.NewUserStore(db)
+	authHandlers := NewAuthHandlers(userStore, sessionManager)
+	
 	s := &Server{
-		db: &database.DB{DB: db},
+		db:             &database.DB{DB: db},
 		server: &http.Server{
 			Addr:    addr,
 			Handler: mux,
 		},
+		sessionManager: sessionManager,
+		authHandlers:   authHandlers,
 	}
 
-	// API routes
-	mux.HandleFunc("/api/summaries", s.handleGetSummaries)
-	mux.HandleFunc("/api/summaries/", s.handleDeleteSummary) // DELETE /api/summaries/{id}
-	mux.HandleFunc("/api/groups", s.handleGetGroups)
-	mux.HandleFunc("/api/export", s.handleExport)
+	// Apply session middleware to all routes
+	sessionMiddleware := sessionManager.Manager.LoadAndSave
+
+	// CSRF protection middleware
+	csrfProtection := auth.NewCSRFProtection(sessionManager)
+	
+	// Rate limiting for authentication endpoints
+	authRateLimiter := auth.NewAuthRateLimiter()
+	
+	// Public auth routes (with session middleware but no auth required)
+	mux.Handle("/api/auth/csrf-token", sessionMiddleware(http.HandlerFunc(s.authHandlers.CSRFToken)))
+	mux.Handle("/api/auth/login", sessionMiddleware(authRateLimiter.Middleware(csrfProtection.Middleware(http.HandlerFunc(s.authHandlers.Login)))))
+	mux.Handle("/api/auth/logout", sessionMiddleware(csrfProtection.Middleware(http.HandlerFunc(s.authHandlers.Logout))))
+	mux.Handle("/api/auth/me", sessionMiddleware(http.HandlerFunc(s.authHandlers.Me)))
+	mux.Handle("/api/auth/register", sessionMiddleware(authRateLimiter.Middleware(csrfProtection.Middleware(http.HandlerFunc(s.authHandlers.Register)))))
+
+	// Protected API routes (with session middleware and auth requirement)
+	mux.Handle("/api/summaries", sessionMiddleware(sessionManager.RequireAuth(http.HandlerFunc(s.handleGetSummaries))))
+	mux.Handle("/api/summaries/", sessionMiddleware(sessionManager.RequireAuth(csrfProtection.Middleware(http.HandlerFunc(s.handleDeleteSummary))))) // DELETE /api/summaries/{id}
+	mux.Handle("/api/groups", sessionMiddleware(sessionManager.RequireAuth(http.HandlerFunc(s.handleGetGroups))))
+	mux.Handle("/api/export", sessionMiddleware(sessionManager.RequireAuth(http.HandlerFunc(s.handleExport))))
+	
+	// Public routes (no auth required)
 	mux.HandleFunc("/api/signal/config", s.handleSignalConfig)
 	mux.HandleFunc("/api/signal/register", s.handleSignalRegister)
 	mux.HandleFunc("/api/signal/status", s.handleSignalStatus)

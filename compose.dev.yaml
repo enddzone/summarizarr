@@ -59,6 +59,10 @@ services:
       - DATABASE_PATH=/data/summarizarr.db
       - SIGNAL_URL=signal-cli:8080
       - LOG_LEVEL=debug # Debug level for development
+
+      # Authentication Configuration
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:8081}
     ports:
       - "8081:8080" # Unified API + frontend
     volumes:

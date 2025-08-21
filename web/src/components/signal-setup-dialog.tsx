@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { Smartphone, QrCode, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import {
   Dialog,
@@ -75,6 +76,7 @@ export function SignalSetupDialog({
       const response = await fetch('/api/signal/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ phoneNumber: phoneNumber.trim() }),
       })
 
@@ -159,10 +161,12 @@ export function SignalSetupDialog({
       <Card>
         <CardContent className="flex flex-col items-center space-y-4 p-6">
           {qrCodeUrl ? (
-            <img
+            <Image
               src={qrCodeUrl}
               alt="Signal QR Code"
-              className="w-48 h-48 border rounded-lg"
+              width={192}
+              height={192}
+              className="border rounded-lg"
             />
           ) : (
             <div className="w-48 h-48 bg-muted rounded-lg flex items-center justify-center">

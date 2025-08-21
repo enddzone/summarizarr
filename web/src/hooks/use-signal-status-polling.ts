@@ -35,7 +35,9 @@ export function useSignalStatusPolling(
 
     const pollStatus = useCallback(async (): Promise<SignalStatusResponse | null> => {
         try {
-            const response = await fetch('/api/signal/status')
+            const response = await fetch('/api/signal/status', {
+                credentials: 'include'
+            })
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`)
             }
