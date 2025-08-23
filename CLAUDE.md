@@ -14,11 +14,13 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 - Enhanced message support: quotes, reactions, and different message types
 
 **Database Layer**: 
-- SQLite with schema in `schema.sql` 
+- SQLCipher-encrypted SQLite with schema in `schema.sql`
 - Stores users, groups, messages, summaries, and authentication data
+- Configurable encryption via `SQLCIPHER_ENCRYPTION_ENABLED` environment variable
 - Foreign key relationships and automatic migration system
 - Separate auth_users table for web authentication (distinct from Signal users)
 - Session storage for persistent login state
+- Migration tool (`cmd/migrate-to-sqlcipher/`) for converting existing databases
 
 **AI Processing**: 
 - Unified AI client in `internal/ai/client.go` with multi-provider support
@@ -54,8 +56,8 @@ make all          # Signal container + Go backend + Next.js frontend
 
 # Individual services  
 make signal       # Start signal-cli-rest-api container only
-make backend      # Run Go backend locally (blocking)
-make backend-bg   # Run Go backend in background with PID management
+make backend      # Run Go backend locally with SQLCipher (blocking)
+make backend-bg   # Run Go backend in background with SQLCipher and PID management
 make frontend     # Run Next.js frontend with hot reload (blocking)
 make frontend-bg  # Run Next.js frontend in background with API proxying
 
@@ -95,8 +97,8 @@ go run cmd/testing/main.go
 
 ### Build & Deploy
 ```bash
-# Local Go build
-go build -o summarizarr cmd/summarizarr/main.go
+# Local Go build with SQLCipher support
+CGO_ENABLED=1 go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go
 
 # Docker development
 make docker       # Full stack with docker-compose
@@ -117,6 +119,8 @@ All configuration uses environment variables. For local development:
    - `AI_PROVIDER` (local/openai/groq/gemini/claude)
    - Provider-specific API keys (if using cloud providers)
    - `SUMMARIZATION_INTERVAL` (e.g., 1h, 12h)
+   - `SQLCIPHER_ENCRYPTION_ENABLED` (true/false)
+   - `SQLCIPHER_ENCRYPTION_KEY` (for development) or `SQLCIPHER_ENCRYPTION_KEY_FILE` (for production)
 
 The Makefile automatically loads `.env` for local development.
 
@@ -135,6 +139,26 @@ The Makefile automatically loads `.env` for local development.
 - `{PROVIDER}_BASE_URL`: API endpoint (with sensible defaults)
 
 **Provider-Specific Defaults**: Each provider includes optimized defaults for base URLs and models.
+
+### SQLCipher Encryption Configuration
+
+**Encryption Support**: The application supports SQLCipher for database encryption:
+- `SQLCIPHER_ENCRYPTION_ENABLED=true/false`: Enable/disable database encryption
+- **Development**: Use `SQLCIPHER_ENCRYPTION_KEY` environment variable with 64-character hex string
+- **Production**: Use `SQLCIPHER_ENCRYPTION_KEY_FILE` pointing to Docker secrets or secure key file
+
+**Database Migration**: Use the migration tool to convert existing databases:
+```bash
+go run cmd/migrate-to-sqlcipher/main.go \
+  -sqlite ./data/summarizarr.db \
+  -sqlcipher ./data/summarizarr_encrypted.db \
+  -key "your_encryption_key"
+```
+
+**Build Requirements**: SQLCipher requires CGO and specific build tags:
+```bash
+CGO_ENABLED=1 go build -tags="sqlite_crypt" cmd/summarizarr/main.go
+```
 
 ## Key Go Patterns
 
@@ -159,14 +183,17 @@ type DB interface {
 
 ## Dependencies
 
-- `modernc.org/sqlite`: Pure Go SQLite driver
+- `github.com/mattn/go-sqlite3`: SQLCipher-enabled SQLite driver (replaces modernc.org/sqlite)
 - `github.com/sashabaranov/go-openai`: OpenAI API client  
 - `github.com/coder/websocket`: WebSocket client for Signal
 - Next.js 15 with TypeScript and shadcn/ui components
+- **SQLCipher library**: Required for encryption support (installed via Homebrew on macOS)
 
 ## Database Schema
 
+- **Encryption**: SQLCipher with AES-256 encryption, 256k KDF iterations, 4096-byte pages
 - Foreign keys: messages → users/groups, summaries → groups
 - Unix timestamps for all time fields
 - Enhanced message fields: quotes, reactions, message types
 - Automatic schema migration on startup
+- **Key Management**: Supports environment variables (dev) and Docker secrets (production)

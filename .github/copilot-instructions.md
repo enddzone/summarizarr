@@ -5,7 +5,7 @@ Summarizarr is a Signal message summarizer that connects to Signal groups via We
 
 ## Architecture
 - **Signal Integration**: Connects to `signal-cli-rest-api` via WebSocket (`internal/signal/client.go`) to receive real-time messages
-- **Database Layer**: SQLite with schema defined in `schema.sql` - stores users, groups, messages, summaries, and authentication data
+- **Database Layer**: SQLCipher-encrypted SQLite with schema defined in `schema.sql` - stores users, groups, messages, summaries, and authentication data with configurable encryption
 - **Authentication System**: Session-based web authentication with separate `auth_users` table (distinct from Signal users) and persistent login state stored in `sessions` table
 - **AI Processing**: Unified AI client (`internal/ai/client.go`) with multi-provider support and configurable scheduling (`internal/ai/scheduler.go`)
 - **Backend Abstraction**: Supports local AI (Ollama) and multiple OpenAI-compatible cloud providers with consistent prompt handling
@@ -93,18 +93,50 @@ AI_PROVIDER=claude
 CLAUDE_API_KEY=sk-ant-xxxxx
 CLAUDE_MODEL=claude-3-sonnet
 CLAUDE_BASE_URL=http://localhost:8000/openai/v1
+
+# SQLCipher Encryption (optional)
+SQLCIPHER_ENCRYPTION_ENABLED=true
+SQLCIPHER_ENCRYPTION_KEY=your-64-character-hex-encryption-key-here
+# Or for production:
+# SQLCIPHER_ENCRYPTION_KEY_FILE=/run/secrets/sqlcipher_key
 ```
 
 For local development, copy `.env.example` to `.env` and fill in your values. The Makefile automatically loads `.env` for all local development targets. For OpenAI setup and testing, see `OPENAI_TESTING.md`.
 
+### SQLCipher Database Encryption
+
+The application supports optional database encryption using SQLCipher:
+
+**Configuration**:
+- Set `SQLCIPHER_ENCRYPTION_ENABLED=true` to enable encryption
+- For development: Use `SQLCIPHER_ENCRYPTION_KEY` with 64-character hex string
+- For production: Use `SQLCIPHER_ENCRYPTION_KEY_FILE` pointing to Docker secrets
+
+**Migration Tool**:
+Convert existing databases using the migration utility:
+```bash
+go run cmd/migrate-to-sqlcipher/main.go \
+  -sqlite ./data/summarizarr.db \
+  -sqlcipher ./data/summarizarr_encrypted.db \
+  -key "$(openssl rand -hex 32)"
+```
+
+**Build Requirements**:
+- CGO_ENABLED=1 must be set
+- Use build tag: `-tags="sqlite_crypt"`
+- SQLCipher library must be installed (Homebrew on macOS: `brew install sqlcipher`)
+
 ### Required Environment Variables
-| Variable                | Required | Default   | Description                                      |
-|-------------------------|----------|-----------|--------------------------------------------------|
-| AI_PROVIDER             | No       | local     | AI provider: local, openai, groq, gemini, claude |
-| SIGNAL_PHONE_NUMBER     | Yes      | -         | Signal phone number (e.g., +1234567890)          |
-| SUMMARIZATION_INTERVAL  | No       | 12h       | How often to generate summaries (e.g., 1h, 12h)  |
-| LOG_LEVEL               | No       | INFO      | Log level (DEBUG, INFO, WARN, ERROR)             |
-| DATABASE_PATH           | No       | summarizarr.db | Database file path                          |
+| Variable                        | Required | Default   | Description                                      |
+|---------------------------------|----------|-----------|--------------------------------------------------|
+| AI_PROVIDER                     | No       | local     | AI provider: local, openai, groq, gemini, claude |
+| SIGNAL_PHONE_NUMBER             | Yes      | -         | Signal phone number (e.g., +1234567890)          |
+| SUMMARIZATION_INTERVAL          | No       | 12h       | How often to generate summaries (e.g., 1h, 12h)  |
+| LOG_LEVEL                       | No       | INFO      | Log level (DEBUG, INFO, WARN, ERROR)             |
+| DATABASE_PATH                   | No       | summarizarr.db | Database file path                          |
+| SQLCIPHER_ENCRYPTION_ENABLED    | No       | false     | Enable SQLCipher database encryption             |
+| SQLCIPHER_ENCRYPTION_KEY        | No       | -         | Encryption key for development (64 hex chars)    |
+| SQLCIPHER_ENCRYPTION_KEY_FILE   | No       | -         | Path to encryption key file for production       |
 
 #### Provider-Specific Variables
 | Provider | API Key Variable | Model Variable | Base URL Variable |
@@ -168,8 +200,8 @@ make all          # Starts signal container + Go backend + Next.js frontend in p
 
 # Or start services individually
 make signal       # Start signal-cli-rest-api container only
-make backend      # Run Go backend locally (blocking)
-make backend-bg   # Run Go backend in background with PID management
+make backend      # Run Go backend locally with SQLCipher (blocking)
+make backend-bg   # Run Go backend in background with SQLCipher and PID management
 make frontend     # Run Next.js frontend with hot reload (blocking)
 make frontend-bg  # Run Next.js frontend in background with API proxying
 
@@ -231,8 +263,8 @@ cp .env.example .env
 
 ### Build & Deploy
 ```bash
-# Local build with latest Go
-go build -o summarizarr cmd/summarizarr/main.go
+# Local build with SQLCipher support (requires CGO)
+CGO_ENABLED=1 go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go
 
 # Docker with health checks
 make docker       # Equivalent to: docker compose up --build -d
@@ -245,6 +277,10 @@ make docker       # Equivalent to: docker compose up --build -d
 - Only processes group messages (ignores DMs)
 
 ## Database Schema Notes
+- **Encryption**: SQLCipher with AES-256 encryption, configurable via environment variables
+- **Key Management**: Supports environment variables (development) and Docker secrets (production)
+- **Migration Tool**: `cmd/migrate-to-sqlcipher/` for converting existing databases to encrypted format
+- **Build Requirements**: CGO_ENABLED=1 and sqlite_crypt build tag for SQLCipher support
 - Foreign key relationships: messages → users/groups, summaries → groups
 - Timestamps stored as Unix epoch integers
 - Enhanced message support: quotes (quote_id, quote_author_uuid, quote_text), reactions (reaction_emoji, reaction_target_author), message types (regular, quote, reaction)
@@ -271,9 +307,10 @@ The Next.js 15 frontend is located in the `web/` directory and features:
 - **Available scripts**: `npm run lint`, `npm test`, `npm run build` (conditional in CI)
 
 ## Dependencies
-- `modernc.org/sqlite`: Pure Go SQLite driver
+- `github.com/mattn/go-sqlite3`: SQLCipher-enabled SQLite driver (replaces modernc.org/sqlite for encryption support)
 - `github.com/sashabaranov/go-openai`: OpenAI API client
 - `github.com/coder/websocket`: WebSocket client for Signal API
 - `github.com/alexedwards/scs/v2`: Session management library
 - `github.com/alexedwards/scs/sqlite3store`: SQLite session store for SCS
 - `golang.org/x/crypto`: Cryptographic functions including bcrypt for password hashing
+- **SQLCipher library**: Native encryption library (installed via package manager)

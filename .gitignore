@@ -29,3 +29,18 @@ ollama-data
 web/cookies.txt
 web/cookies.txt
 cookies.txt
+
+# Development encryption keys
+.dev_encryption_key
+*.key
+*.pem
+encryption_key*
+db_key*
+sqlcipher_key*
+
+# Production secrets
+docker/secrets/sqlcipher_encryption_key
+secrets/
+run/secrets/
+data/summarizarr_backup_20250822_220427.db
+data

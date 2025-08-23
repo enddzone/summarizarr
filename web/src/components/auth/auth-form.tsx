@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Image from 'next/image';
-import { Eye, EyeOff, Mail, Lock, UserPlus, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, UserPlus, LogIn, Check, X } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,19 @@ export function AuthForm() {
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const { login, register } = useAuth();
 
+    // Password requirement validation for real-time feedback
+    const passwordRequirements = useMemo(() => {
+        if (!isRegistering || !password) return [];
+        
+        return [
+            { label: 'At least 8 characters', met: password.length >= 8 },
+            { label: 'One uppercase letter', met: /[A-Z]/.test(password) },
+            { label: 'One lowercase letter', met: /[a-z]/.test(password) },
+            { label: 'One number', met: /[0-9]/.test(password) },
+            { label: 'One special character (!@#$%^&*)', met: /[!@#$%^&*(),.?":{}|<>]/.test(password) },
+        ];
+    }, [password, isRegistering]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -30,8 +43,27 @@ export function AuthForm() {
                 if (password !== confirmPassword) {
                     throw new Error('Passwords do not match');
                 }
+                
+                // Validate password strength (matching backend requirements)
+                const passwordErrors = [];
                 if (password.length < 8) {
-                    throw new Error('Password must be at least 8 characters long');
+                    passwordErrors.push('at least 8 characters');
+                }
+                if (!/[A-Z]/.test(password)) {
+                    passwordErrors.push('at least one uppercase letter');
+                }
+                if (!/[a-z]/.test(password)) {
+                    passwordErrors.push('at least one lowercase letter');
+                }
+                if (!/[0-9]/.test(password)) {
+                    passwordErrors.push('at least one number');
+                }
+                if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+                    passwordErrors.push('at least one special character');
+                }
+                
+                if (passwordErrors.length > 0) {
+                    throw new Error(`Password must contain ${passwordErrors.join(', ')}`);
                 }
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 if (!emailRegex.test(email)) {
@@ -132,6 +164,25 @@ export function AuthForm() {
                                 )}
                             </Button>
                         </div>
+                        {isRegistering && password && (
+                            <div className="mt-2 p-3 bg-muted/30 rounded-md border">
+                                <p className="text-xs text-muted-foreground mb-2">Password requirements:</p>
+                                <div className="space-y-1">
+                                    {passwordRequirements.map((req, index) => (
+                                        <div key={index} className="flex items-center gap-2 text-xs">
+                                            {req.met ? (
+                                                <Check className="h-3 w-3 text-green-600" />
+                                            ) : (
+                                                <X className="h-3 w-3 text-muted-foreground" />
+                                            )}
+                                            <span className={req.met ? 'text-green-600' : 'text-muted-foreground'}>
+                                                {req.label}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                     {isRegistering && (
                         <div className="space-y-2">
