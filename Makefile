@@ -305,7 +305,7 @@ test: ## Run tests (supports FILE= for specific files)
 		else \
 			go test -v -race ./...; \
 		fi; \
-		cd web && npm test; \
+			cd web && ( [ -d node_modules ] || npm install ) && npm test; \
 	fi
 
 .PHONY: help signal backend frontend all docker prod status stop clean logs logs-signal dev-setup install-sqlcipher dev-key dev-setup-encrypted prod-key test-backend test-frontend build-encrypted build-frontend build lint test

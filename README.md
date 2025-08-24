@@ -226,20 +226,7 @@ SQLCIPHER_ENCRYPTION_KEY_FILE=/run/secrets/db_key
 - Keys are 32-byte (64 hex characters) for AES-256 encryption
 - Never commit keys to version control
 
-**Migration**: Convert existing databases:
-```bash
-# Build migration tool
-CGO_ENABLED=1 go build -tags="sqlite_crypt" cmd/migrate-to-sqlcipher/main.go
-
-# Migrate database
-./migrate-to-sqlcipher -sqlite old.db -sqlcipher encrypted.db -key "your_key"
-```
-
-**Key Rotation**: For future key rotation (currently manual process):
-1. Stop the application
-2. Create new encrypted database with new key
-3. Migrate data from old to new database using migration tool
-4. Update key configuration and restart with new database
+Note: This project requires encrypted databases from first run. There is no supported migration from unencrypted databases.
 
 ## Production Deployment
 

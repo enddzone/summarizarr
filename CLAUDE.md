@@ -20,7 +20,7 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 - Foreign key relationships and automatic migration system
 - Separate auth_users table for web authentication (distinct from Signal users)
 - Session storage for persistent login state
-- Migration tool (`cmd/migrate-to-sqlcipher/`) for converting existing databases
+  
 
 **AI Processing**: 
 - Unified AI client in `internal/ai/client.go` with multi-provider support
@@ -147,13 +147,7 @@ The Makefile automatically loads `.env` for local development.
 - **Development**: Use `SQLCIPHER_ENCRYPTION_KEY` environment variable with 64-character hex string
 - **Production**: Use `SQLCIPHER_ENCRYPTION_KEY_FILE` pointing to Docker secrets or secure key file
 
-**Database Migration**: Use the migration tool to convert existing databases:
-```bash
-go run cmd/migrate-to-sqlcipher/main.go \
-  -sqlite ./data/summarizarr.db \
-  -sqlcipher ./data/summarizarr_encrypted.db \
-  -key "your_encryption_key"
-```
+Note: Databases must be encrypted from first run; no migration tool is provided.
 
 **Build Requirements**: SQLCipher requires CGO and specific build tags:
 ```bash

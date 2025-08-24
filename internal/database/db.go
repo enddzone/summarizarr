@@ -113,13 +113,13 @@ func validateEncryptionKey(key string) error {
 	if len(key) != 64 {
 		return fmt.Errorf("encryption key must be 64 hex characters, got %d", len(key))
 	}
-	
+
 	for _, c := range key {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return fmt.Errorf("encryption key must be 64 hex characters, contains invalid character: %c", c)
 		}
 	}
-	
+
 	return nil
 }
 

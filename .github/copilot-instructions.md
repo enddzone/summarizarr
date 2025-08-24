@@ -112,14 +112,7 @@ The application supports optional database encryption using SQLCipher:
 - For development: Use `SQLCIPHER_ENCRYPTION_KEY` with 64-character hex string
 - For production: Use `SQLCIPHER_ENCRYPTION_KEY_FILE` pointing to Docker secrets
 
-**Migration Tool**:
-Convert existing databases using the migration utility:
-```bash
-go run cmd/migrate-to-sqlcipher/main.go \
-  -sqlite ./data/summarizarr.db \
-  -sqlcipher ./data/summarizarr_encrypted.db \
-  -key "$(openssl rand -hex 32)"
-```
+ 
 
 **Build Requirements**:
 - CGO_ENABLED=1 must be set
@@ -279,7 +272,7 @@ make docker       # Equivalent to: docker compose up --build -d
 ## Database Schema Notes
 - **Encryption**: SQLCipher with AES-256 encryption, configurable via environment variables
 - **Key Management**: Supports environment variables (development) and Docker secrets (production)
-- **Migration Tool**: `cmd/migrate-to-sqlcipher/` for converting existing databases to encrypted format
+ 
 - **Build Requirements**: CGO_ENABLED=1 and sqlite_crypt build tag for SQLCipher support
 - Foreign key relationships: messages → users/groups, summaries → groups
 - Timestamps stored as Unix epoch integers
