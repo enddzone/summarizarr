@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
@@ -48,7 +48,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestUserStore(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close test database: %v", err)
+		}
+	}()
 
 	userStore := NewUserStore(db)
 
@@ -119,7 +123,11 @@ func TestUserStore(t *testing.T) {
 
 func TestSessionManager(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close test database: %v", err)
+		}
+	}()
 
 	sessionManager := NewSessionManager(db)
 
@@ -160,7 +168,11 @@ func TestSessionManager(t *testing.T) {
 
 func TestCSRFProtection(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close test database: %v", err)
+		}
+	}()
 
 	sessionManager := NewSessionManager(db)
 	csrfProtection := NewCSRFProtection(sessionManager)

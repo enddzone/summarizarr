@@ -63,6 +63,11 @@ services:
       # Authentication Configuration
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-}
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:8081}
+
+      # Encryption Configuration
+      - SQLCIPHER_ENCRYPTION_ENABLED=${SQLCIPHER_ENCRYPTION_ENABLED:-false}
+      - SQLCIPHER_ENCRYPTION_KEY=${SQLCIPHER_ENCRYPTION_KEY:-}
+      - SQLCIPHER_ENCRYPTION_KEY_FILE=${SQLCIPHER_ENCRYPTION_KEY_FILE:-}
     ports:
       - "8081:8080" # Unified API + frontend
     volumes:

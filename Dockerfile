@@ -20,6 +20,9 @@ RUN npm run build
 # Stage 2: Build Go backend
 FROM golang:1.25-alpine AS backend-builder
 
+# Install SQLCipher and build dependencies, including static library
+RUN apk add --no-cache gcc musl-dev sqlite-dev sqlite-static sqlcipher-dev pkgconf openssl-dev openssl-libs-static
+
 WORKDIR /app
 
 # Copy Go modules
@@ -37,27 +40,30 @@ RUN rm -rf internal/frontend/static
 # Copy fresh frontend build output to embed location - ensures latest assets
 COPY --from=frontend-builder /app/web/out internal/frontend/static/
 
-# Build static Go binary with version information
+# Build Go binary with SQLCipher support (CGO enabled)
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
 ARG GOARCH
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH:-amd64} go build \
-    -ldflags="-w -s -extldflags '-static' \
+RUN CGO_ENABLED=1 \
+    CGO_CFLAGS="$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
+    CGO_LDFLAGS="$(pkg-config --libs sqlcipher) $(pkg-config --libs libcrypto libssl)" \
+    go build \
+    -tags="sqlite_crypt" \
+    -ldflags="-w -s \
     -X 'summarizarr/internal/version.Version=${VERSION}' \
     -X 'summarizarr/internal/version.GitCommit=${GIT_COMMIT}' \
     -X 'summarizarr/internal/version.BuildTime=${BUILD_TIME}'" \
-    -a -installsuffix cgo \
     -o summarizarr \
     ./cmd/summarizarr
 
 # Stage 3: Runtime
 FROM alpine:latest
 
-# Update package index and add ca certificates for HTTPS and basic utilities
+# Update package index and add ca certificates, utilities, and SQLCipher runtime libraries
 RUN apk update && \
-    apk --no-cache add ca-certificates wget && \
+    apk --no-cache add ca-certificates wget sqlcipher-libs openssl && \
     addgroup -g 1001 summarizarr && \
     adduser -D -s /bin/sh -u 1001 -G summarizarr summarizarr
 

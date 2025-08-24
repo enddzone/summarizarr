@@ -2,9 +2,8 @@ class ApiClient {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = process.env.NODE_ENV === 'development'
-      ? 'http://localhost:8081'
-      : '';
+    // Use relative URLs in all environments to allow Next.js proxy to work
+    this.baseUrl = '';
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

@@ -10,11 +10,11 @@ import (
 	"summarizarr/internal/auth"
 	"testing"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func setupAuthTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite", ":memory:")
+	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
@@ -178,12 +178,16 @@ func TestAuthHandlers(t *testing.T) {
 	t.Run("Login", func(t *testing.T) {
 		// First register a user
 		userStore := auth.NewUserStore(setupAuthTestDB(t))
-		userStore.CreateUser("login@example.com", "SecurePass123!")
+		if _, err := userStore.CreateUser("login@example.com", "SecurePass123!"); err != nil {
+			t.Fatalf("Failed to create test user: %v", err)
+		}
 
 		t.Run("ValidLogin", func(t *testing.T) {
 			// Create new auth handlers and set up a user
 			authHandlers, sessionManager := setupAuthHandlers(t)
-			authHandlers.userStore.CreateUser("login@example.com", "SecurePass123!")
+			if _, err := authHandlers.userStore.CreateUser("login@example.com", "SecurePass123!"); err != nil {
+				t.Fatalf("Failed to create test user: %v", err)
+			}
 
 			reqBody := map[string]string{
 				"email":    "login@example.com",
@@ -220,7 +224,9 @@ func TestAuthHandlers(t *testing.T) {
 		t.Run("InvalidCredentials", func(t *testing.T) {
 			// Create new auth handlers and set up a user
 			authHandlers, sessionManager := setupAuthHandlers(t)
-			authHandlers.userStore.CreateUser("login@example.com", "SecurePass123!")
+			if _, err := authHandlers.userStore.CreateUser("login@example.com", "SecurePass123!"); err != nil {
+				t.Fatalf("Failed to create test user: %v", err)
+			}
 
 			reqBody := map[string]string{
 				"email":    "login@example.com",

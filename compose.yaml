@@ -63,6 +63,11 @@ services:
       - SIGNAL_URL=signal-cli:8080
       - LOG_LEVEL=${LOG_LEVEL:-info}
 
+      # Encryption Configuration (SQLCipher)
+      - SQLCIPHER_ENCRYPTION_ENABLED=${SQLCIPHER_ENCRYPTION_ENABLED:-true}
+      - SQLCIPHER_ENCRYPTION_KEY_FILE=/run/secrets/sqlcipher_encryption_key
+      - CGO_ENABLED=1
+
       # Authentication Configuration
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-}
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:8081}
@@ -75,6 +80,8 @@ services:
       # - ./config:/config
       - summarizarr-data:/data
       - summarizarr-config:/config
+    secrets:
+      - sqlcipher_encryption_key
     depends_on:
       signal-cli:
         condition: service_healthy
@@ -146,4 +153,8 @@ volumes:
     driver: local
   # ollama-data:  # Uncomment if using Ollama sidecar service
   #   driver: local
+
+secrets:
+  sqlcipher_encryption_key:
+    file: ./docker/secrets/sqlcipher_encryption_key
 

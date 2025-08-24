@@ -65,7 +65,11 @@ func writeErrorResponse(w http.ResponseWriter, status int, code, message string,
 		Error: apiError,
 	}
 	
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		// Log the error but don't try to write another response
+		// since headers are already sent
+		return
+	}
 }
 
 // writeValidationErrorResponse writes a validation error response with field-specific errors
@@ -81,7 +85,11 @@ func writeValidationErrorResponse(w http.ResponseWriter, fieldErrors []map[strin
 		Errors: fieldErrors,
 	}
 	
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		// Log the error but don't try to write another response
+		// since headers are already sent
+		return
+	}
 }
 
 // Common error response helpers
@@ -101,14 +109,6 @@ func writeUserNotFoundError(w http.ResponseWriter) {
 	writeErrorResponse(w, http.StatusNotFound, ErrCodeUserNotFound, "User not found")
 }
 
-func writeCSRFError(w http.ResponseWriter) {
-	writeErrorResponse(w, http.StatusForbidden, ErrCodeCSRFTokenInvalid, "CSRF token validation failed")
-}
-
-func writeRateLimitError(w http.ResponseWriter) {
-	writeErrorResponse(w, http.StatusTooManyRequests, ErrCodeRateLimited, "Too many requests. Please try again later.")
-}
-
 func writeMethodNotAllowedError(w http.ResponseWriter, allowedMethods ...string) {
 	if len(allowedMethods) > 0 {
 		w.Header().Set("Allow", allowedMethods[0])
@@ -122,8 +122,4 @@ func writeInvalidInputError(w http.ResponseWriter, details string) {
 
 func writeInternalServerError(w http.ResponseWriter, details string) {
 	writeErrorResponse(w, http.StatusInternalServerError, ErrCodeInternalError, "Internal server error", details)
-}
-
-func writeNotFoundError(w http.ResponseWriter, resource string) {
-	writeErrorResponse(w, http.StatusNotFound, ErrCodeNotFound, resource+" not found")
 }

@@ -8,9 +8,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"summarizarr/internal/config"
 	"summarizarr/internal/signal"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // DB represents a connection to the database.
@@ -18,18 +19,130 @@ type DB struct {
 	*sql.DB
 }
 
-// NewDB creates a new database connection.
-func NewDB(dataSourceName string) (*DB, error) {
-	db, err := sql.Open("sqlite", dataSourceName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+// NewDB creates a new database connection with SQLCipher support.
+func NewDB(dataSourceName string, encryptionConfig config.EncryptionConfig) (*DB, error) {
+	var encryptionKey string
+	var err error
+
+	// Load encryption key first if encryption is enabled
+	if encryptionConfig.Enabled {
+		encryptionKey, err = config.LoadEncryptionKey(encryptionConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load encryption key: %w", err)
+		}
 	}
 
+	var db *sql.DB
+	if encryptionConfig.Enabled && encryptionKey != "" {
+		// Validate encryption key format
+		if err := validateEncryptionKey(encryptionKey); err != nil {
+			return nil, err
+		}
+
+		// Open database normally, then set key via PRAGMA for reliable SQLCipher behavior
+		db, err = sql.Open("sqlite3", dataSourceName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open encrypted database: %w", err)
+		}
+
+		slog.Info("Opening encrypted database with SQLCipher", "path", dataSourceName)
+
+		// Ensure SQLCipher is available
+		if err := verifySQLCipher(db); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("SQLCipher verification failed: %w", err)
+		}
+
+		// Set the encryption key immediately after opening the connection
+		if _, err := db.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, encryptionKey)); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to set encryption key: %w", err)
+		}
+
+		// Validate that the key is correct by executing a simple query
+		// Wrong keys typically produce "file is not a database" or similar errors
+		var cnt int
+		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master").Scan(&cnt); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to open encrypted database with provided key: %w", err)
+		}
+
+		// Apply safe, non-breaking PRAGMAs after keying
+		if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+			slog.Warn("Failed to enable foreign_keys", "error", err)
+		}
+		// Prefer WAL for concurrent readers; ignore errors (older SQLite/SQLCipher may not support)
+		if _, err := db.Exec(`PRAGMA journal_mode = WAL`); err != nil {
+			slog.Warn("Failed to set journal_mode=WAL", "error", err)
+		}
+		// Set a reasonable busy timeout to avoid SQLITE_BUSY in tight loops
+		if _, err := db.Exec(`PRAGMA busy_timeout = 5000`); err != nil {
+			slog.Warn("Failed to set busy_timeout", "error", err)
+		}
+		// Lower fsync cost when using WAL while keeping durability acceptable
+		if _, err := db.Exec(`PRAGMA synchronous = NORMAL`); err != nil {
+			slog.Warn("Failed to set synchronous=NORMAL", "error", err)
+		}
+	} else if encryptionConfig.Enabled {
+		return nil, fmt.Errorf("encryption is enabled but no encryption key provided")
+	} else {
+		// Open unencrypted database
+		db, err = sql.Open("sqlite3", dataSourceName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open database: %w", err)
+		}
+		slog.Info("Encryption disabled, opening unencrypted database", "path", dataSourceName)
+	}
+
+	// Test database connectivity
 	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	// Configure connection pool for SQLite/SQLCipher after encryption is verified
+	db.SetMaxOpenConns(1)    // SQLite works best with single connection
+	db.SetMaxIdleConns(1)    // Keep one idle connection
+	db.SetConnMaxLifetime(0) // No max lifetime (persistent connection)
+
 	return &DB{db}, nil
+}
+
+// validateEncryptionKey validates that the encryption key is in the correct format
+func validateEncryptionKey(key string) error {
+	if len(key) != 64 {
+		return fmt.Errorf("encryption key must be 64 hex characters, got %d", len(key))
+	}
+
+	for _, c := range key {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return fmt.Errorf("encryption key must be 64 hex characters, contains invalid character: %c", c)
+		}
+	}
+
+	return nil
+}
+
+// verifySQLCipher checks that SQLCipher is working correctly
+func verifySQLCipher(db *sql.DB) error {
+	// Try a simple SQLCipher-specific PRAGMA command first
+	var version string
+	err := db.QueryRow("PRAGMA cipher_version").Scan(&version)
+	if err != nil {
+		// If cipher_version fails, try an alternative verification
+		// Try to execute a basic cipher-specific PRAGMA to test if SQLCipher is available
+		_, pragmaErr := db.Exec("PRAGMA cipher_compatibility = 4")
+		if pragmaErr != nil {
+			return fmt.Errorf("SQLCipher not available (ensure CGO_ENABLED=1 and SQLCipher library installed): %w", err)
+		}
+
+		// If cipher_compatibility works but cipher_version doesn't, SQLCipher is available but version query failed
+		slog.Warn("SQLCipher version query failed, but cipher functionality appears available", "version_error", err)
+		version = "unknown"
+	}
+
+	slog.Info("SQLCipher initialized", "version", version)
+	return nil
 }
 
 // Init creates the database schema.

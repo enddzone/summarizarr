@@ -26,16 +26,35 @@ signal: ## Start signal-cli-rest-api container
 	docker compose -f compose.dev.yaml up -d signal-cli
 	@echo "$(GREEN)Signal container started on port 8080$(NC)"
 
-backend: ## Run Go backend locally (requires signal container)
-	@echo "$(YELLOW)Starting Go backend locally on :8081...$(NC)"
+backend: ## Run Go backend locally with SQLCipher (requires signal container)
+	@echo "$(YELLOW)Starting Go backend locally on :8081 with SQLCipher...$(NC)"
 	@if [ ! -f .env ]; then echo "$(RED)Warning: .env not found. Copy .env.example to .env$(NC)"; fi
-	LISTEN_ADDR=:8081 go run cmd/summarizarr/main.go
+	@if command -v pkg-config >/dev/null 2>&1; then \
+		CGO_ENABLED=1 \
+		CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
+		CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" \
+		LISTEN_ADDR=:8081 go run -tags="sqlite_crypt" cmd/summarizarr/main.go; \
+	else \
+		CGO_ENABLED=1 \
+		CGO_CFLAGS="-I$$(brew --prefix sqlcipher)/include/sqlcipher -DSQLITE_HAS_CODEC" \
+		CGO_LDFLAGS="-L$$(brew --prefix sqlcipher)/lib -lsqlcipher -L$$(brew --prefix openssl@3)/lib -lssl -lcrypto" \
+		LISTEN_ADDR=:8081 go run -tags="sqlite_crypt" cmd/summarizarr/main.go; \
+	fi
 
-backend-bg: ## Run Go backend in background with local config
-	@echo "$(YELLOW)Starting Go backend in background on :8081...$(NC)"
+backend-bg: ## Run Go backend in background with SQLCipher and local config
+	@echo "$(YELLOW)Starting Go backend in background on :8081 with SQLCipher...$(NC)"
 	@if [ ! -f .env ]; then echo "$(RED)Warning: .env not found. Copy .env.example to .env$(NC)"; fi
-	@export DATABASE_PATH=./data/summarizarr.db SIGNAL_URL=localhost:8080 LISTEN_ADDR=:8081 && \
-	 nohup go run cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid
+	@if command -v pkg-config >/dev/null 2>&1; then \
+		export DATABASE_PATH=./data/summarizarr.db SIGNAL_URL=localhost:8080 LISTEN_ADDR=:8081 CGO_ENABLED=1 \
+		CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
+		CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" && \
+		nohup go run -tags="sqlite_crypt" cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid; \
+	else \
+		export DATABASE_PATH=./data/summarizarr.db SIGNAL_URL=localhost:8080 LISTEN_ADDR=:8081 CGO_ENABLED=1 \
+		CGO_CFLAGS="-I$$(brew --prefix sqlcipher)/include/sqlcipher -DSQLITE_HAS_CODEC" \
+		CGO_LDFLAGS="-L$$(brew --prefix sqlcipher)/lib -lsqlcipher -L$$(brew --prefix openssl@3)/lib -lssl -lcrypto" && \
+		nohup go run -tags="sqlite_crypt" cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid; \
+	fi
 	@echo "$(GREEN)Backend started in background (PID: $$(cat backend.pid))$(NC)"
 
 frontend: ## Run Next.js frontend locally with hot reload
@@ -82,7 +101,7 @@ docker: ## Run development stack with docker compose (dev compose file)
 prod: ## Run production example stack with pre-built image
 	@echo "$(YELLOW)Starting production example stack...$(NC)"
 	docker compose -f compose.yaml up -d
-	@echo "$(GREEN)Production stack started. Backend: http://localhost:8080$(NC)"
+	@echo "$(GREEN)Production stack started. Backend: http://localhost:8081$(NC)"
 
 status: ## Show status of all services (dev compose only)
 	@echo "$(YELLOW)Service Status:$(NC)"
@@ -139,8 +158,41 @@ dev-setup: ## Initial setup for development
 	cd web && npm install
 	@echo "$(GREEN)Development setup complete. Edit .env with your values$(NC)"
 
-test-backend: ## Test Go backend
-	go test ./...
+# SQLCipher encryption key management
+install-sqlcipher: ## Install SQLCipher for development (macOS)
+	@if command -v brew >/dev/null 2>&1; then \
+		brew install sqlcipher; \
+		echo "$(GREEN)SQLCipher installed via Homebrew$(NC)"; \
+	else \
+		echo "$(RED)Please install SQLCipher manually for your platform$(NC)"; \
+	fi
+
+dev-key: ## Generate development encryption key
+	@if [ ! -f .dev_encryption_key ]; then \
+		openssl rand -hex 32 > .dev_encryption_key; \
+		echo "$(GREEN)Generated development encryption key in .dev_encryption_key$(NC)"; \
+	fi
+	@if ! grep -q "SQLCIPHER_ENCRYPTION_KEY=" .env 2>/dev/null; then \
+		echo "SQLCIPHER_ENCRYPTION_KEY=$$(cat .dev_encryption_key)" >> .env; \
+		echo "$(GREEN)Added SQLCIPHER_ENCRYPTION_KEY to .env$(NC)"; \
+	fi
+
+dev-setup-encrypted: dev-key ## Setup development environment with encryption enabled
+	@echo "SQLCIPHER_ENCRYPTION_ENABLED=true" >> .env
+	@echo "CGO_ENABLED=1" >> .env
+	@echo "$(GREEN)Development environment setup with encryption enabled$(NC)"
+
+prod-key: ## Generate production encryption key
+	@mkdir -p docker/secrets
+	@openssl rand -hex 32 > docker/secrets/sqlcipher_encryption_key
+	@chmod 600 docker/secrets/sqlcipher_encryption_key
+	@echo "$(GREEN)Generated production encryption key in docker/secrets/sqlcipher_encryption_key$(NC)"
+	@echo "$(RED)IMPORTANT: Back up this key securely!$(NC)"
+
+test-backend: ## Test Go backend with SQLCipher
+	@echo "$(YELLOW)Running backend tests with SQLCipher support...$(NC)"
+	TEST_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+	CGO_ENABLED=1 go test -tags="sqlite_crypt" ./...
 
 test-frontend: ## Test Next.js frontend
 	cd web && npm test
@@ -158,9 +210,37 @@ build-frontend: ## Build Next.js frontend and copy to internal/frontend/static/
 	cp -r web/out/ internal/frontend/static/
 	@echo "$(GREEN)Frontend build complete$(NC)"
 
-build: build-frontend ## Build the entire application (frontend + backend)
-	@echo "$(YELLOW)Building Go backend with embedded frontend...$(NC)"
-	GOARCH=$${GOARCH:-$$(go env GOARCH)} go build -o summarizarr cmd/summarizarr/main.go
+# SQLCipher builds
+build-encrypted: build-frontend ## Build with SQLCipher support (CGO enabled)
+	@echo "$(YELLOW)Building Go backend with SQLCipher support...$(NC)"
+	@if command -v pkg-config >/dev/null 2>&1; then \
+		CGO_ENABLED=1 \
+		CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
+		CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" \
+		go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go; \
+	else \
+		echo "$(RED)pkg-config not found. Trying with Homebrew paths...$(NC)"; \
+		CGO_ENABLED=1 \
+		CGO_CFLAGS="-I$$(brew --prefix sqlcipher)/include/sqlcipher -DSQLITE_HAS_CODEC" \
+		CGO_LDFLAGS="-L$$(brew --prefix sqlcipher)/lib -lsqlcipher -L$$(brew --prefix openssl@3)/lib -lssl -lcrypto" \
+		go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go; \
+	fi
+	@echo "$(GREEN)Build complete with SQLCipher: ./summarizarr$(NC)"
+
+build: build-frontend ## Build the entire application (frontend + backend with SQLCipher)
+	@echo "$(YELLOW)Building Go backend with embedded frontend and SQLCipher support...$(NC)"
+	@if command -v pkg-config >/dev/null 2>&1; then \
+		CGO_ENABLED=1 \
+		CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
+		CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" \
+		go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go; \
+	else \
+		echo "$(YELLOW)pkg-config not found. Trying with Homebrew paths...$(NC)"; \
+		CGO_ENABLED=1 \
+		CGO_CFLAGS="-I$$(brew --prefix sqlcipher)/include/sqlcipher -DSQLITE_HAS_CODEC" \
+		CGO_LDFLAGS="-L$$(brew --prefix sqlcipher)/lib -lsqlcipher -L$$(brew --prefix openssl@3)/lib -lssl -lcrypto" \
+		go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go; \
+	fi
 	@echo "$(GREEN)Build complete: ./summarizarr$(NC)"
 
 # Claude Code hooks integration
@@ -218,8 +298,14 @@ test: ## Run tests (supports FILE= for specific files)
 		esac \
 	else \
 		echo "Running all tests" >&2; \
-		go test -v -race ./...; \
-		cd web && npm test; \
+		if command -v pkg-config >/dev/null 2>&1; then \
+			CGO_ENABLED=1 CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" \
+			TEST_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+			go test -v -race -tags="sqlite_crypt" ./...; \
+		else \
+			go test -v -race ./...; \
+		fi; \
+			cd web && ( [ -d node_modules ] || npm install ) && npm test; \
 	fi
 
-.PHONY: help signal backend frontend all docker prod status stop clean logs logs-signal dev-setup test-backend test-frontend lint test
+.PHONY: help signal backend frontend all docker prod status stop clean logs logs-signal dev-setup install-sqlcipher dev-key dev-setup-encrypted prod-key test-backend test-frontend build-encrypted build-frontend build lint test

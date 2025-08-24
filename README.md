@@ -170,6 +170,15 @@ make frontend     # Next.js with hot reload
 make test-backend
 make test-frontend
 
+### SQLCipher (Local Dev & Tests)
+
+Backend encryption features require SQLCipher when running locally:
+
+- macOS: `brew install sqlcipher`
+- Ubuntu/Debian: `sudo apt-get install sqlcipher libsqlcipher-dev pkg-config libssl-dev`
+
+Tests: `make test` will automatically use SQLCipher if available (CGO + `-tags sqlite_crypt`). If SQLCipher isn't installed, backend tests run without encryption and encryption-specific tests may be skipped.
+
 # Stop all
 make stop
 ```
@@ -190,9 +199,34 @@ make stop
 
 - **Automatic anonymization** of names and phone numbers before AI processing
 - **Local data storage** in SQLite database
+- **Database encryption** with SQLCipher (AES-256)
 - **Non-root container** execution
 - **Vulnerability scanning** with Trivy
 - **No external data** sent without anonymization
+
+### Database Encryption
+
+Optional SQLCipher encryption for enhanced data security:
+
+```bash
+# Generate encryption key (64-char hex)
+openssl rand -hex 32
+
+# Development (environment variable)
+SQLCIPHER_ENCRYPTION_ENABLED=true
+SQLCIPHER_ENCRYPTION_KEY=your_64_character_hex_key
+
+# Production (Docker secrets)
+SQLCIPHER_ENCRYPTION_ENABLED=true
+SQLCIPHER_ENCRYPTION_KEY_FILE=/run/secrets/db_key
+```
+
+**Key Management**:
+- Store keys in Docker secrets or secure key management system
+- Keys are 32-byte (64 hex characters) for AES-256 encryption
+- Never commit keys to version control
+
+Note: This project requires encrypted databases from first run. There is no supported migration from unencrypted databases.
 
 ## Production Deployment
 

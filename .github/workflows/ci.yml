@@ -51,6 +51,11 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Install SQLCipher build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sqlcipher libsqlcipher-dev pkg-config libssl-dev
+
       - name: Download frontend build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -68,8 +73,13 @@ jobs:
       - name: Install Go dependencies
         run: go mod download
 
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+      - name: Run tests with SQLCipher
+        run: |
+          export CGO_ENABLED=1
+          export CGO_CFLAGS="$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC"
+          export CGO_LDFLAGS="$(pkg-config --libs sqlcipher) $(pkg-config --libs openssl)"
+          TEST_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+          go test -v -race -coverprofile=coverage.out -tags=sqlite_crypt ./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

@@ -43,7 +43,14 @@ func main() {
 		}
 	}
 
-	db, err := database.NewDB(cfg.DatabasePath)
+	// Load encryption configuration
+	encryptionConfig := config.EncryptionConfig{
+		Enabled: os.Getenv("SQLCIPHER_ENCRYPTION_ENABLED") == "true",
+		KeyFile: os.Getenv("SQLCIPHER_ENCRYPTION_KEY_FILE"),
+		KeyEnv:  "SQLCIPHER_ENCRYPTION_KEY",
+	}
+
+	db, err := database.NewDB(cfg.DatabasePath, encryptionConfig)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)

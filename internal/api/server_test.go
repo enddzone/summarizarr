@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestGetSummariesEndpoint(t *testing.T) {
 	// Create a temporary test database
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestGetSummariesEndpoint(t *testing.T) {
 
 func TestGetSummariesEmpty(t *testing.T) {
 	// Create a temporary test database
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestHandleSignalQrCode_Success(t *testing.T) {
 	_ = os.Setenv("SIGNAL_URL", mockServer.URL[7:]) // Remove http://
 
 	// Create test database
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestHandleSignalQrCode_DefaultDeviceName(t *testing.T) {
 	}()
 	_ = os.Setenv("SIGNAL_URL", mockServer.URL[7:])
 
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestHandleSignalQrCode_DefaultDeviceName(t *testing.T) {
 }
 
 func TestHandleSignalQrCode_InvalidDeviceName(t *testing.T) {
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -458,7 +458,7 @@ func TestHandleSignalQrCode_SignalCLIError(t *testing.T) {
 	}()
 	_ = os.Setenv("SIGNAL_URL", mockServer.URL[7:])
 
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -512,7 +512,7 @@ func TestHandleSignalQrCode_NetworkTimeout(t *testing.T) {
 	}()
 	_ = os.Setenv("SIGNAL_URL", mockServer.URL[7:])
 
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -566,7 +566,7 @@ func TestHandleSignalQrCode_HeaderSecurity(t *testing.T) {
 	}()
 	_ = os.Setenv("SIGNAL_URL", mockServer.URL[7:])
 
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -636,7 +636,7 @@ func TestHandleSignalQrCode_ResponseSizeLimit(t *testing.T) {
 	}()
 	_ = os.Setenv("SIGNAL_URL", mockServer.URL[7:])
 
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -668,7 +668,7 @@ func TestHandleSignalQrCode_ResponseSizeLimit(t *testing.T) {
 }
 
 func TestHandleSignalQrCode_MethodNotAllowed(t *testing.T) {
-	testDB, err := sql.Open("sqlite", ":memory:")
+	testDB, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
