@@ -100,7 +100,9 @@ func (csrf *CSRFProtection) Middleware(next http.Handler) http.Handler {
 				
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusForbidden)
-				w.Write([]byte(`{"error":{"code":"CSRF_TOKEN_INVALID","message":"CSRF token validation failed"}}`))
+				if _, err := w.Write([]byte(`{"error":{"code":"CSRF_TOKEN_INVALID","message":"CSRF token validation failed"}}`)); err != nil {
+					slog.ErrorContext(r.Context(), "Failed to write CSRF error response", slog.String("error", err.Error()))
+				}
 				return
 			}
 		}

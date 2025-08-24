@@ -16,7 +16,11 @@ func TestGetSummaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	defer testDB.Close()
+	defer func() {
+		if err := testDB.Close(); err != nil {
+			t.Logf("Warning: failed to close test database: %v", err)
+		}
+	}()
 
 	// Initialize database schema
 	if err := testDB.initTestSchema(); err != nil {

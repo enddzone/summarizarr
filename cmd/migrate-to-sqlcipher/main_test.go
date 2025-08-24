@@ -96,7 +96,9 @@ func TestGetTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close() // Ignore close errors in helper functions
+	}()
 	
 	tables, err := getTables(db)
 	if err != nil {
@@ -142,7 +144,11 @@ func TestMigrateTableTransactionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create destination database: %v", err)
 	}
-	defer destDBConn.Close()
+	defer func() {
+		if err := destDBConn.Close(); err != nil {
+			t.Logf("Warning: failed to close destination database: %v", err)
+		}
+	}()
 	
 	// Set up encryption
 	_, err = destDBConn.Exec(fmt.Sprintf("PRAGMA key = 'x\"%s\"'", testKey))
@@ -161,7 +167,11 @@ func TestMigrateTableTransactionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open source database: %v", err)
 	}
-	defer sourceDBConn.Close()
+	defer func() {
+		if err := sourceDBConn.Close(); err != nil {
+			t.Logf("Warning: failed to close source database: %v", err)
+		}
+	}()
 	
 	// Migration should fail due to schema mismatch
 	_, err = migrateTable(sourceDBConn, destDBConn, "users")
@@ -203,13 +213,21 @@ func TestVerifyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open source database: %v", err)
 	}
-	defer sourceDBConn.Close()
+	defer func() {
+		if err := sourceDBConn.Close(); err != nil {
+			t.Logf("Warning: failed to close source database: %v", err)
+		}
+	}()
 	
 	destDBConn, err := sql.Open("sqlite", destDB)
 	if err != nil {
 		t.Fatalf("Failed to open destination database: %v", err)
 	}
-	defer destDBConn.Close()
+	defer func() {
+		if err := destDBConn.Close(); err != nil {
+			t.Logf("Warning: failed to close destination database: %v", err)
+		}
+	}()
 	
 	// Get tables
 	tables, err := getTables(sourceDBConn)
@@ -244,7 +262,11 @@ func TestVerifyMigrationRowCountMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open destination database: %v", err)
 	}
-	defer destDBConn.Close()
+	defer func() {
+		if err := destDBConn.Close(); err != nil {
+			t.Logf("Warning: failed to close destination database: %v", err)
+		}
+	}()
 	
 	_, err = destDBConn.Exec("INSERT INTO users (uuid, number, name) VALUES (?, ?, ?)", 
 		"extra-uuid", "+9999999999", "Extra User")
@@ -257,7 +279,11 @@ func TestVerifyMigrationRowCountMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open source database: %v", err)
 	}
-	defer sourceDBConn.Close()
+	defer func() {
+		if err := sourceDBConn.Close(); err != nil {
+			t.Logf("Warning: failed to close source database: %v", err)
+		}
+	}()
 	
 	// Get tables
 	tables, err := getTables(sourceDBConn)
@@ -279,7 +305,9 @@ func createTestSourceDB(dbPath string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() {
+		_ = db.Close() // Ignore close errors in helper functions
+	}()
 	
 	// Create schema
 	schema := `
@@ -345,17 +373,16 @@ func createTestSourceDB(dbPath string) error {
 
 // verifyMigrationResult verifies that migration was successful
 func verifyMigrationResult(dbPath, encryptionKey string) error {
-	// Open encrypted database
+	// Open encrypted database and set key via PRAGMA
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	
-	// Set encryption key
-	_, err = db.Exec(fmt.Sprintf("PRAGMA key = 'x\"%s\"'", encryptionKey))
-	if err != nil {
-		return err
+	defer func() {
+		_ = db.Close() // Ignore close errors in helper functions
+	}()
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, encryptionKey)); err != nil {
+		return fmt.Errorf("failed to set encryption key: %v", err)
 	}
 	
 	// Verify we can read data

@@ -48,7 +48,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestUserStore(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close test database: %v", err)
+		}
+	}()
 
 	userStore := NewUserStore(db)
 
@@ -119,7 +123,11 @@ func TestUserStore(t *testing.T) {
 
 func TestSessionManager(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close test database: %v", err)
+		}
+	}()
 
 	sessionManager := NewSessionManager(db)
 
@@ -160,7 +168,11 @@ func TestSessionManager(t *testing.T) {
 
 func TestCSRFProtection(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close test database: %v", err)
+		}
+	}()
 
 	sessionManager := NewSessionManager(db)
 	csrfProtection := NewCSRFProtection(sessionManager)

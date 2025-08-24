@@ -32,49 +32,71 @@ func NewDB(dataSourceName string, encryptionConfig config.EncryptionConfig) (*DB
 		}
 	}
 
-	db, err := sql.Open("sqlite3", dataSourceName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
+	var db *sql.DB
 	if encryptionConfig.Enabled && encryptionKey != "" {
-		// Set encryption key IMMEDIATELY after opening (must be first operation)
-		_, err = db.Exec(fmt.Sprintf("PRAGMA key = 'x\"%s\"'", encryptionKey))
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("failed to set encryption key: %w", err)
+		// Validate encryption key format
+		if err := validateEncryptionKey(encryptionKey); err != nil {
+			return nil, err
 		}
 
-		// Set SQLCipher parameters
-		_, err = db.Exec("PRAGMA cipher_page_size = 4096")
+		// Open database normally, then set key via PRAGMA for reliable SQLCipher behavior
+		db, err = sql.Open("sqlite3", dataSourceName)
 		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("failed to set cipher page size: %w", err)
-		}
-
-		_, err = db.Exec("PRAGMA kdf_iter = 256000")
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("failed to set KDF iterations: %w", err)
+			return nil, fmt.Errorf("failed to open encrypted database: %w", err)
 		}
 
 		slog.Info("Opening encrypted database with SQLCipher", "path", dataSourceName)
 
-		// Verify that SQLCipher is working
+		// Ensure SQLCipher is available
 		if err := verifySQLCipher(db); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("SQLCipher verification failed: %w", err)
 		}
+
+		// Set the encryption key immediately after opening the connection
+		if _, err := db.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, encryptionKey)); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to set encryption key: %w", err)
+		}
+
+		// Validate that the key is correct by executing a simple query
+		// Wrong keys typically produce "file is not a database" or similar errors
+		var cnt int
+		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master").Scan(&cnt); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("failed to open encrypted database with provided key: %w", err)
+		}
+
+		// Apply safe, non-breaking PRAGMAs after keying
+		if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+			slog.Warn("Failed to enable foreign_keys", "error", err)
+		}
+		// Prefer WAL for concurrent readers; ignore errors (older SQLite/SQLCipher may not support)
+		if _, err := db.Exec(`PRAGMA journal_mode = WAL`); err != nil {
+			slog.Warn("Failed to set journal_mode=WAL", "error", err)
+		}
+		// Set a reasonable busy timeout to avoid SQLITE_BUSY in tight loops
+		if _, err := db.Exec(`PRAGMA busy_timeout = 5000`); err != nil {
+			slog.Warn("Failed to set busy_timeout", "error", err)
+		}
+		// Lower fsync cost when using WAL while keeping durability acceptable
+		if _, err := db.Exec(`PRAGMA synchronous = NORMAL`); err != nil {
+			slog.Warn("Failed to set synchronous=NORMAL", "error", err)
+		}
 	} else if encryptionConfig.Enabled {
-		db.Close()
 		return nil, fmt.Errorf("encryption is enabled but no encryption key provided")
 	} else {
+		// Open unencrypted database
+		db, err = sql.Open("sqlite3", dataSourceName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open database: %w", err)
+		}
 		slog.Info("Encryption disabled, opening unencrypted database", "path", dataSourceName)
 	}
 
 	// Test database connectivity
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
@@ -84,6 +106,21 @@ func NewDB(dataSourceName string, encryptionConfig config.EncryptionConfig) (*DB
 	db.SetConnMaxLifetime(0) // No max lifetime (persistent connection)
 
 	return &DB{db}, nil
+}
+
+// validateEncryptionKey validates that the encryption key is in the correct format
+func validateEncryptionKey(key string) error {
+	if len(key) != 64 {
+		return fmt.Errorf("encryption key must be 64 hex characters, got %d", len(key))
+	}
+	
+	for _, c := range key {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return fmt.Errorf("encryption key must be 64 hex characters, contains invalid character: %c", c)
+		}
+	}
+	
+	return nil
 }
 
 // verifySQLCipher checks that SQLCipher is working correctly

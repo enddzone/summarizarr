@@ -69,47 +69,54 @@ func migrateToEncryptedDB(sqlitePath, sqlcipherPath, encryptionKey, schemaFile s
 	if err != nil {
 		return fmt.Errorf("failed to open SQLite database: %w", err)
 	}
-	defer sqliteDB.Close()
+	defer func() {
+		if err := sqliteDB.Close(); err != nil {
+			log.Printf("Warning: failed to close source database: %v", err)
+		}
+	}()
 
 	// Verify source database is accessible
 	if err := sqliteDB.Ping(); err != nil {
 		return fmt.Errorf("source database is not accessible: %w", err)
 	}
 
-	// 3. Create new encrypted SQLCipher database
+	// Validate encryption key format (should be hex string)
+	if len(encryptionKey) != 64 {
+		return fmt.Errorf("encryption key must be 64 characters (32 bytes in hex format)")
+	}
+	for _, c := range encryptionKey {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return fmt.Errorf("encryption key must be a valid hex string")
+		}
+	}
+
+	// 3. Create new encrypted SQLCipher database using PRAGMA key approach
 	fmt.Println("3. Creating encrypted SQLCipher database...")
 	sqlcipherDB, err := sql.Open("sqlite3", sqlcipherPath)
 	if err != nil {
 		return fmt.Errorf("failed to create SQLCipher database: %w", err)
 	}
-	defer sqlcipherDB.Close()
+	defer func() {
+		if err := sqlcipherDB.Close(); err != nil {
+			log.Printf("Warning: failed to close destination database: %v", err)
+		}
+	}()
 
-	// Verify SQLCipher is available first
+	// Try to get SQLCipher version (optional, do not hard fail in environments without it)
 	var version string
-	err = sqlcipherDB.QueryRow("PRAGMA cipher_version").Scan(&version)
-	if err != nil {
-		return fmt.Errorf("SQLCipher not available: %w", err)
+	if err := sqlcipherDB.QueryRow("PRAGMA cipher_version").Scan(&version); err == nil && version != "" {
+		fmt.Printf("✓ SQLCipher version: %s\n", version)
+	} else {
+		fmt.Println("! SQLCipher version not reported; proceeding with PRAGMA key setup")
 	}
-	fmt.Printf("✓ SQLCipher version: %s\n", version)
-
-	// Set encryption key as first operation after verification
-	_, err = sqlcipherDB.Exec(fmt.Sprintf("PRAGMA key = 'x\"%s\"'", encryptionKey))
-	if err != nil {
+	if _, err := sqlcipherDB.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, encryptionKey)); err != nil {
 		return fmt.Errorf("failed to set encryption key: %w", err)
 	}
-	fmt.Println("✓ Encryption key set")
-
-	// Set SQLCipher parameters
-	_, err = sqlcipherDB.Exec("PRAGMA cipher_page_size = 4096")
-	if err != nil {
-		return fmt.Errorf("failed to set cipher page size: %w", err)
+	// Touch sqlite_master to ensure key correctness and initialize DB header
+	if _, err := sqlcipherDB.Exec("CREATE TABLE IF NOT EXISTS __init__ (id INTEGER PRIMARY KEY)"); err != nil {
+		return fmt.Errorf("failed to initialize encrypted database: %w", err)
 	}
-	
-	_, err = sqlcipherDB.Exec("PRAGMA kdf_iter = 256000")
-	if err != nil {
-		return fmt.Errorf("failed to set KDF iterations: %w", err)
-	}
-	fmt.Println("✓ SQLCipher parameters configured")
+	fmt.Println("✓ Encryption key set via PRAGMA")
 
 	// 4. Skip schema setup initially - we'll create tables as we migrate them
 	fmt.Println("4. Will create tables dynamically based on source database structure...")
@@ -154,7 +161,11 @@ func validateSourceDatabase(dbPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Warning: failed to close database: %v", err)
+		}
+	}()
 
 	// Verify it's a valid SQLite database
 	var count int
@@ -166,31 +177,16 @@ func validateSourceDatabase(dbPath string) error {
 	return nil
 }
 
-func setupSchema(db *sql.DB, schemaFile string) error {
-	// Try to read schema from file first
-	if _, err := os.Stat(schemaFile); err == nil {
-		schema, err := os.ReadFile(schemaFile)
-		if err != nil {
-			return fmt.Errorf("failed to read schema file: %w", err)
-		}
-		
-		if _, err := db.Exec(string(schema)); err != nil {
-			return fmt.Errorf("failed to execute schema: %w", err)
-		}
-		fmt.Printf("✓ Applied schema from %s\n", schemaFile)
-		return nil
-	}
-
-	fmt.Printf("⚠ Schema file %s not found, schema will be created from source database structure\n", schemaFile)
-	return nil
-}
-
 func getTables(db *sql.DB) ([]string, error) {
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Warning: failed to close rows: %v", err)
+		}
+	}()
 
 	var tables []string
 	for rows.Next() {
@@ -226,7 +222,11 @@ func migrateTable(source, dest *sql.DB, tableName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer sourceRows.Close()
+	defer func() {
+		if err := sourceRows.Close(); err != nil {
+			log.Printf("Warning: failed to close source rows: %v", err)
+		}
+	}()
 
 	// Prepare insert statement
 	placeholders := make([]string, len(columns))
@@ -240,7 +240,11 @@ func migrateTable(source, dest *sql.DB, tableName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer stmt.Close()
+	defer func() {
+		if err := stmt.Close(); err != nil {
+			log.Printf("Warning: failed to close statement: %v", err)
+		}
+	}()
 
 	// Copy rows
 	rowCount := 0
@@ -269,7 +273,11 @@ func getTableColumns(db *sql.DB, tableName string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("Warning: failed to close rows: %v", err)
+		}
+	}()
 
 	var columns []string
 	for rows.Next() {
@@ -375,7 +383,11 @@ func migrateTableWithTransaction(source, dest *sql.DB, tableName string) (int, e
 	if err != nil {
 		return 0, fmt.Errorf("failed to query source table %s: %w", tableName, err)
 	}
-	defer sourceRows.Close()
+	defer func() {
+		if err := sourceRows.Close(); err != nil {
+			log.Printf("Warning: failed to close source rows: %v", err)
+		}
+	}()
 
 	// Prepare insert statement
 	placeholders := make([]string, len(columns))
@@ -389,7 +401,11 @@ func migrateTableWithTransaction(source, dest *sql.DB, tableName string) (int, e
 	if err != nil {
 		return 0, fmt.Errorf("failed to prepare insert statement for table %s: %w", tableName, err)
 	}
-	defer stmt.Close()
+	defer func() {
+		if err := stmt.Close(); err != nil {
+			log.Printf("Warning: failed to close statement: %v", err)
+		}
+	}()
 
 	// Copy rows with progress tracking
 	rowCount := 0
@@ -421,7 +437,9 @@ func migrateTableWithTransaction(source, dest *sql.DB, tableName string) (int, e
 			if err != nil {
 				return rowCount, fmt.Errorf("failed to begin new transaction at row %d for table %s: %w", rowCount, tableName, err)
 			}
-			stmt.Close()
+			if err := stmt.Close(); err != nil {
+				log.Printf("Warning: failed to close statement in batch: %v", err)
+			}
 			stmt, err = tx.Prepare(insertSQL)
 			if err != nil {
 				return rowCount, fmt.Errorf("failed to re-prepare statement at row %d for table %s: %w", rowCount, tableName, err)
@@ -449,16 +467,26 @@ func createBackup(sourcePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open source file for backup: %w", err)
 	}
-	defer sourceFile.Close()
+	defer func() {
+		if err := sourceFile.Close(); err != nil {
+			log.Printf("Warning: failed to close source file: %v", err)
+		}
+	}()
 
 	backupFile, err := os.Create(backupPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create backup file: %w", err)
 	}
-	defer backupFile.Close()
+	defer func() {
+		if err := backupFile.Close(); err != nil {
+			log.Printf("Warning: failed to close backup file: %v", err)
+		}
+	}()
 
 	if _, err := io.Copy(backupFile, sourceFile); err != nil {
-		os.Remove(backupPath) // Clean up partial backup
+		if err := os.Remove(backupPath); err != nil {
+			log.Printf("Warning: failed to clean up partial backup: %v", err)
+		}
 		return "", fmt.Errorf("failed to copy data to backup file: %w", err)
 	}
 

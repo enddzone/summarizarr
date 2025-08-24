@@ -21,7 +21,7 @@ func LoadEncryptionKey(config EncryptionConfig) (string, error) {
 	}
 
 	// Try environment variable first (development)
-	if envKey := os.Getenv(config.KeyEnv); envKey != "" {
+	if envKey, exists := os.LookupEnv(config.KeyEnv); exists {
 		return validateKey(envKey)
 	}
 
@@ -47,7 +47,7 @@ func validateKey(key string) (string, error) {
 	
 	// Validate hex format
 	for _, char := range key {
-		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') && (char < 'A' || char > 'F') {
 			return "", fmt.Errorf("encryption key must be valid hexadecimal")
 		}
 	}

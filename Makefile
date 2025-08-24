@@ -298,7 +298,13 @@ test: ## Run tests (supports FILE= for specific files)
 		esac \
 	else \
 		echo "Running all tests" >&2; \
-		go test -v -race ./...; \
+		if command -v pkg-config >/dev/null 2>&1; then \
+			CGO_ENABLED=1 CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" \
+			TEST_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+			go test -v -race -tags="sqlite_crypt" ./...; \
+		else \
+			go test -v -race ./...; \
+		fi; \
 		cd web && npm test; \
 	fi
 

@@ -151,7 +151,9 @@ func (arl *AuthRateLimiter) Middleware(next http.Handler) http.Handler {
 			
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error":{"code":"RATE_LIMITED","message":"Too many requests. Please try again later."}}`))
+			if _, err := w.Write([]byte(`{"error":{"code":"RATE_LIMITED","message":"Too many requests. Please try again later."}}`)); err != nil {
+				slog.ErrorContext(r.Context(), "Failed to write rate limit error response", slog.String("error", err.Error()))
+			}
 			return
 		}
 		

@@ -170,6 +170,15 @@ make frontend     # Next.js with hot reload
 make test-backend
 make test-frontend
 
+### SQLCipher (Local Dev & Tests)
+
+Backend encryption features require SQLCipher when running locally:
+
+- macOS: `brew install sqlcipher`
+- Ubuntu/Debian: `sudo apt-get install sqlcipher libsqlcipher-dev pkg-config libssl-dev`
+
+Tests: `make test` will automatically use SQLCipher if available (CGO + `-tags sqlite_crypt`). If SQLCipher isn't installed, backend tests run without encryption and encryption-specific tests may be skipped.
+
 # Stop all
 make stop
 ```

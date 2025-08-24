@@ -135,7 +135,9 @@ func TestLoadEncryptionKeyDisabled(t *testing.T) {
 // TestLoadEncryptionKeyNoSource tests error when no key source is available
 func TestLoadEncryptionKeyNoSource(t *testing.T) {
 	// Ensure env var doesn't exist
-	os.Unsetenv("NONEXISTENT_KEY")
+	if err := os.Unsetenv("NONEXISTENT_KEY"); err != nil {
+		t.Logf("Warning: failed to unset environment variable: %v", err)
+	}
 	
 	config := EncryptionConfig{
 		Enabled: true,

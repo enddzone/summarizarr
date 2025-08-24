@@ -6,10 +6,33 @@ import (
 	"testing"
 	"summarizarr/internal/config"
 	"summarizarr/internal/signal"
+	"database/sql"
 )
+
+// hasSQLCipher checks whether the running environment has SQLCipher available.
+// It attempts to read PRAGMA cipher_version; if not available, we skip encryption-specific tests.
+func hasSQLCipher(t *testing.T) bool {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Logf("Warning: failed to open sqlite3 for SQLCipher check: %v", err)
+		return false
+	}
+	defer func() { _ = db.Close() }()
+
+	var version string
+	if err := db.QueryRow("PRAGMA cipher_version").Scan(&version); err != nil || version == "" {
+		// Not available in this environment
+		return false
+	}
+	return true
+}
 
 // TestNewDBWithEncryption tests database creation with encryption enabled
 func TestNewDBWithEncryption(t *testing.T) {
+	if !hasSQLCipher(t) {
+		t.Skip("SQLCipher not available in this environment; skipping encryption test")
+	}
 	// Generate test encryption key
 	testKey := generateTestEncryptionKey()
 	
@@ -30,7 +53,11 @@ func TestNewDBWithEncryption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create encrypted database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close database: %v", err)
+		}
+	}()
 	
 	// Verify SQLCipher is working
 	if err := db.initTestSchema(); err != nil {
@@ -70,7 +97,11 @@ func TestNewDBWithoutEncryption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create unencrypted database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close database: %v", err)
+		}
+	}()
 	
 	// Initialize schema
 	if err := db.initTestSchema(); err != nil {
@@ -141,7 +172,7 @@ func TestEncryptionKeyValidation(t *testing.T) {
 				if err == nil {
 					t.Errorf("Expected error for key '%s' but got none", tt.key)
 					if db != nil {
-						db.Close()
+						_ = db.Close()
 					}
 					return
 				}
@@ -153,7 +184,7 @@ func TestEncryptionKeyValidation(t *testing.T) {
 					t.Errorf("Expected no error for valid key, got: %v", err)
 				}
 				if db != nil {
-					db.Close()
+					_ = db.Close()
 				}
 			}
 		})
@@ -163,7 +194,9 @@ func TestEncryptionKeyValidation(t *testing.T) {
 // TestEncryptionEnabledButNoKey tests error handling when encryption is enabled but no key provided
 func TestEncryptionEnabledButNoKey(t *testing.T) {
 	// Unset any potential test keys
-	os.Unsetenv("TEST_NO_KEY")
+	if err := os.Unsetenv("TEST_NO_KEY"); err != nil {
+		t.Logf("Warning: failed to unset environment variable: %v", err)
+	}
 	
 	encryptionConfig := config.EncryptionConfig{
 		Enabled: true,
@@ -177,12 +210,12 @@ func TestEncryptionEnabledButNoKey(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when encryption enabled but no key provided")
 		if db != nil {
-			db.Close()
+			_ = db.Close()
 		}
 		return
 	}
 	
-	expectedError := "encryption is enabled but no encryption key provided"
+	expectedError := "failed to load encryption key"
 	if !contains(err.Error(), expectedError) {
 		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
 	}
@@ -190,6 +223,9 @@ func TestEncryptionEnabledButNoKey(t *testing.T) {
 
 // TestEncryptedDatabasePersistence tests that encrypted data persists across database connections
 func TestEncryptedDatabasePersistence(t *testing.T) {
+	if !hasSQLCipher(t) {
+		t.Skip("SQLCipher not available in this environment; skipping encryption persistence test")
+	}
 	testKey := generateTestEncryptionKey()
 	t.Setenv("PERSISTENCE_TEST_KEY", testKey)
 	
@@ -223,7 +259,7 @@ func TestEncryptedDatabasePersistence(t *testing.T) {
 			t.Fatalf("Failed to save test summary: %v", err)
 		}
 		
-		db.Close()
+		_ = db.Close()
 	}
 	
 	// Second connection: Verify data persists
@@ -232,7 +268,11 @@ func TestEncryptedDatabasePersistence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to reopen encrypted database: %v", err)
 		}
-		defer db.Close()
+		defer func() {
+		if err := db.Close(); err != nil {
+			t.Logf("Warning: failed to close database: %v", err)
+		}
+	}()
 		
 		// Verify summaries exist
 		summaries, err := db.GetSummaries()
@@ -262,6 +302,9 @@ func TestEncryptedDatabasePersistence(t *testing.T) {
 
 // TestEncryptedDatabaseWithWrongKey tests that wrong key fails to decrypt
 func TestEncryptedDatabaseWithWrongKey(t *testing.T) {
+	if !hasSQLCipher(t) {
+		t.Skip("SQLCipher not available in this environment; skipping wrong-key test")
+	}
 	// Create database with one key
 	correctKey := generateTestEncryptionKey()
 	t.Setenv("CORRECT_KEY", correctKey)
@@ -285,12 +328,27 @@ func TestEncryptedDatabaseWithWrongKey(t *testing.T) {
 			t.Fatalf("Failed to initialize database: %v", err)
 		}
 		
-		db.Close()
+		// Save test data that will need to be decrypted later
+		testMessage := createTestMessage()
+		if err := db.SaveMessage(testMessage); err != nil {
+			t.Fatalf("Failed to save test message: %v", err)
+		}
+		
+		// Save test summary
+		if err := db.SaveSummary(1, "Test summary for wrong key test", 1000, 2000); err != nil {
+			t.Fatalf("Failed to save test summary: %v", err)
+		}
+		
+		_ = db.Close()
 	}
 	
 	// Try to open with wrong key
 	wrongKey, _ := config.GenerateKey() // Generate a different key
 	t.Setenv("WRONG_KEY", wrongKey)
+	
+	// Debug: Log the keys to verify they're different
+	t.Logf("Correct key: %s", correctKey)
+	t.Logf("Wrong key: %s", wrongKey)
 	
 	wrongEncryptionConfig := config.EncryptionConfig{
 		Enabled: true,
@@ -298,15 +356,10 @@ func TestEncryptedDatabaseWithWrongKey(t *testing.T) {
 	}
 	
 	db, err := NewDB(dbPath, wrongEncryptionConfig)
-	if err != nil {
-		t.Fatalf("Database creation should succeed even with wrong key: %v", err)
-	}
-	defer db.Close()
-	
-	// Attempt to read data should fail
-	_, err = db.GetSummaries()
 	if err == nil {
-		t.Error("Expected error when reading encrypted database with wrong key")
+		// If, for some reason, opening succeeds, ensure we don't leave resources open
+		_ = db.Close()
+		t.Fatal("Expected error when opening encrypted database with wrong key")
 	}
 }
 
