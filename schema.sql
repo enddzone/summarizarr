@@ -66,3 +66,24 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expiry);
+
+-- Encryption metadata: track key version and rotation history
+CREATE TABLE IF NOT EXISTS encryption_info (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    key_version INTEGER NOT NULL DEFAULT 1,
+    last_rotated_at INTEGER DEFAULT NULL
+);
+
+-- Ensure single row exists
+INSERT OR IGNORE INTO encryption_info (id, key_version, last_rotated_at)
+VALUES (1, 1, NULL);
+
+CREATE TABLE IF NOT EXISTS encryption_rotation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_version INTEGER NOT NULL,
+    to_version INTEGER NOT NULL,
+    rotated_at INTEGER NOT NULL,
+    backup_path TEXT,
+    verification_ok BOOLEAN NOT NULL DEFAULT 0,
+    error TEXT
+);

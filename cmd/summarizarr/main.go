@@ -11,6 +11,7 @@ import (
 	"summarizarr/internal/api"
 	"summarizarr/internal/config"
 	"summarizarr/internal/database"
+	"summarizarr/internal/encryption"
 	"summarizarr/internal/frontend"
 	"summarizarr/internal/ollama"
 	signalclient "summarizarr/internal/signal"
@@ -43,14 +44,15 @@ func main() {
 		}
 	}
 
-	// Load encryption configuration
-	encryptionConfig := config.EncryptionConfig{
-		Enabled: os.Getenv("SQLCIPHER_ENCRYPTION_ENABLED") == "true",
-		KeyFile: os.Getenv("SQLCIPHER_ENCRYPTION_KEY_FILE"),
-		KeyEnv:  "SQLCIPHER_ENCRYPTION_KEY",
+	// Mandatory encryption: load or create key using manager
+	encMgr := encryption.NewManager(cfg.DatabasePath)
+	encKey, err := encMgr.LoadOrCreateKey()
+	if err != nil {
+		slog.Error("Failed to obtain encryption key", "error", err)
+		os.Exit(1)
 	}
 
-	db, err := database.NewDB(cfg.DatabasePath, encryptionConfig)
+	db, err := database.NewDB(cfg.DatabasePath, encKey)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)
@@ -106,7 +108,7 @@ func main() {
 	}
 
 	// API server listen address is configurable via LISTEN_ADDR (default :8080)
-	apiServer := api.NewServer(cfg.ListenAddr, db.DB, frontendFS)
+	apiServer := api.NewServerWithAppDB(cfg.ListenAddr, db, frontendFS)
 
 	go apiServer.Start()
 
@@ -134,6 +136,36 @@ func main() {
 
 	scheduler := ai.NewScheduler(db, aiClient, summarizationInterval)
 	go scheduler.Start(ctx)
+
+	// Optional encryption key rotation scheduler
+	if cfg.EncryptionKeyRotationInterval != "" {
+		rotDur, err := time.ParseDuration(cfg.EncryptionKeyRotationInterval)
+		if err != nil {
+			slog.Warn("Invalid ENCRYPTION_KEY_ROTATION_INTERVAL; rotation disabled", "value", cfg.EncryptionKeyRotationInterval, "error", err)
+		} else {
+			slog.Info("Starting encryption key rotation scheduler", "interval", rotDur.String())
+			go func() {
+				ticker := time.NewTicker(rotDur)
+				defer ticker.Stop()
+				mgr := encryption.NewManager(cfg.DatabasePath)
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						rotCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+						_, err := mgr.RotateKey(rotCtx, db)
+						cancel()
+						if err != nil {
+							slog.Error("Scheduled key rotation failed", "error", err)
+						} else {
+							slog.Info("Scheduled key rotation completed")
+						}
+					}
+				}
+			}()
+		}
+	}
 
 	<-ctx.Done()
 	slog.Info("Shutting down Summarizarr...")

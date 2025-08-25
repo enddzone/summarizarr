@@ -43,4 +43,5 @@ docker/secrets/sqlcipher_encryption_key
 secrets/
 run/secrets/
 data/summarizarr_backup_20250822_220427.db
+data/encryption.key
 data

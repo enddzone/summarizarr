@@ -8,8 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"summarizarr/internal/config"
 	"summarizarr/internal/signal"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -17,81 +17,73 @@ import (
 // DB represents a connection to the database.
 type DB struct {
 	*sql.DB
+	DataSourceName string
 }
 
-// NewDB creates a new database connection with SQLCipher support.
-func NewDB(dataSourceName string, encryptionConfig config.EncryptionConfig) (*DB, error) {
-	var encryptionKey string
-	var err error
+// NewDB creates a new database connection with SQLCipher enforced.
+func NewDB(dataSourceName string, encryptionKey string) (*DB, error) {
+	// Validate encryption key format
+	if err := validateEncryptionKey(encryptionKey); err != nil {
+		return nil, err
+	}
 
-	// Load encryption key first if encryption is enabled
-	if encryptionConfig.Enabled {
-		encryptionKey, err = config.LoadEncryptionKey(encryptionConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load encryption key: %w", err)
+	// Open database normally, then set key via PRAGMA for reliable SQLCipher behavior
+	db, err := sql.Open("sqlite3", dataSourceName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open encrypted database: %w", err)
+	}
+
+	slog.Info("Opening encrypted database with SQLCipher", "path", dataSourceName)
+
+	// Set the encryption key immediately after opening the connection.
+	// This is critical to ensure new databases are created encrypted.
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, encryptionKey)); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to set encryption key: %w", err)
+	}
+
+	// Apply recommended SQLCipher settings for security and compatibility.
+	// These must be set after the key and before any other operations on a new database.
+	pragmas := []string{
+		"PRAGMA cipher_compatibility = 4",
+		"PRAGMA cipher_page_size = 4096",
+		"PRAGMA kdf_iter = 256000",
+		"PRAGMA cipher_hmac_algorithm = HMAC_SHA512",
+		"PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512",
+	}
+	for _, pragma := range pragmas {
+		if _, err := db.Exec(pragma); err != nil {
+			// It's okay for some of these to fail on older SQLCipher versions, so just log a warning.
+			slog.Warn("Failed to set SQLCipher pragma, continuing...", "pragma", pragma, "error", err)
 		}
 	}
 
-	var db *sql.DB
-	if encryptionConfig.Enabled && encryptionKey != "" {
-		// Validate encryption key format
-		if err := validateEncryptionKey(encryptionKey); err != nil {
-			return nil, err
-		}
+	// Ensure SQLCipher is available and working on the keyed connection.
+	if err := verifySQLCipher(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("SQLCipher verification failed: %w", err)
+	}
 
-		// Open database normally, then set key via PRAGMA for reliable SQLCipher behavior
-		db, err = sql.Open("sqlite3", dataSourceName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open encrypted database: %w", err)
-		}
+	// Validate that the key is correct by executing a simple query.
+	// On a new DB, this forces the file to be created on disk with encryption.
+	var cnt int
+	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master").Scan(&cnt); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("failed to open encrypted database with provided key: %w", err)
+	}
 
-		slog.Info("Opening encrypted database with SQLCipher", "path", dataSourceName)
-
-		// Ensure SQLCipher is available
-		if err := verifySQLCipher(db); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("SQLCipher verification failed: %w", err)
-		}
-
-		// Set the encryption key immediately after opening the connection
-		if _, err := db.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, encryptionKey)); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("failed to set encryption key: %w", err)
-		}
-
-		// Validate that the key is correct by executing a simple query
-		// Wrong keys typically produce "file is not a database" or similar errors
-		var cnt int
-		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master").Scan(&cnt); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("failed to open encrypted database with provided key: %w", err)
-		}
-
-		// Apply safe, non-breaking PRAGMAs after keying
-		if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-			slog.Warn("Failed to enable foreign_keys", "error", err)
-		}
-		// Prefer WAL for concurrent readers; ignore errors (older SQLite/SQLCipher may not support)
-		if _, err := db.Exec(`PRAGMA journal_mode = WAL`); err != nil {
-			slog.Warn("Failed to set journal_mode=WAL", "error", err)
-		}
-		// Set a reasonable busy timeout to avoid SQLITE_BUSY in tight loops
-		if _, err := db.Exec(`PRAGMA busy_timeout = 5000`); err != nil {
-			slog.Warn("Failed to set busy_timeout", "error", err)
-		}
-		// Lower fsync cost when using WAL while keeping durability acceptable
-		if _, err := db.Exec(`PRAGMA synchronous = NORMAL`); err != nil {
-			slog.Warn("Failed to set synchronous=NORMAL", "error", err)
-		}
-	} else if encryptionConfig.Enabled {
-		return nil, fmt.Errorf("encryption is enabled but no encryption key provided")
-	} else {
-		// Open unencrypted database
-		db, err = sql.Open("sqlite3", dataSourceName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open database: %w", err)
-		}
-		slog.Info("Encryption disabled, opening unencrypted database", "path", dataSourceName)
+	// Apply safe, non-breaking PRAGMAs after keying
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		slog.Warn("Failed to enable foreign_keys", "error", err)
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode = WAL`); err != nil {
+		slog.Warn("Failed to set journal_mode=WAL", "error", err)
+	}
+	if _, err := db.Exec(`PRAGMA busy_timeout = 5000`); err != nil {
+		slog.Warn("Failed to set busy_timeout", "error", err)
+	}
+	if _, err := db.Exec(`PRAGMA synchronous = NORMAL`); err != nil {
+		slog.Warn("Failed to set synchronous=NORMAL", "error", err)
 	}
 
 	// Test database connectivity
@@ -105,7 +97,7 @@ func NewDB(dataSourceName string, encryptionConfig config.EncryptionConfig) (*DB
 	db.SetMaxIdleConns(1)    // Keep one idle connection
 	db.SetConnMaxLifetime(0) // No max lifetime (persistent connection)
 
-	return &DB{db}, nil
+	return &DB{DB: db, DataSourceName: dataSourceName}, nil
 }
 
 // validateEncryptionKey validates that the encryption key is in the correct format
@@ -116,7 +108,7 @@ func validateEncryptionKey(key string) error {
 
 	for _, c := range key {
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
-			return fmt.Errorf("encryption key must be 64 hex characters, contains invalid character: %c", c)
+			return fmt.Errorf("encryption key must be valid hexadecimal")
 		}
 	}
 
@@ -142,6 +134,100 @@ func verifySQLCipher(db *sql.DB) error {
 	}
 
 	slog.Info("SQLCipher initialized", "version", version)
+	return nil
+}
+
+// Rekey rotates the SQLCipher key for the currently opened database connection.
+func (db *DB) Rekey(newKey string) error {
+	if err := validateEncryptionKey(newKey); err != nil {
+		return err
+	}
+	// Use SQLCipher PRAGMA rekey syntax with hex key
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA rekey = "x'%s'"`, newKey)); err != nil {
+		return fmt.Errorf("failed to rekey database: %w", err)
+	}
+	return nil
+}
+
+// VerifyWithKey attempts to open a fresh connection using the provided key.
+func (db *DB) VerifyWithKey(key string) error {
+	if err := validateEncryptionKey(key); err != nil {
+		return err
+	}
+	// For in-memory databases, we cannot re-open; perform a simple query on current conn
+	if db.DataSourceName == ":memory:" {
+		var cnt int
+		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master").Scan(&cnt); err != nil {
+			return fmt.Errorf("verification query failed on current connection: %w", err)
+		}
+		return nil
+	}
+	fresh, err := sql.Open("sqlite3", db.DataSourceName)
+	if err != nil {
+		return fmt.Errorf("failed to open database for verification: %w", err)
+	}
+	defer func() { _ = fresh.Close() }()
+
+	if err := verifySQLCipher(fresh); err != nil {
+		return fmt.Errorf("SQLCipher verification failed on fresh connection: %w", err)
+	}
+	if _, err := fresh.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, key)); err != nil {
+		return fmt.Errorf("failed to apply verification key: %w", err)
+	}
+	var cnt int
+	if err := fresh.QueryRow("SELECT COUNT(*) FROM sqlite_master").Scan(&cnt); err != nil {
+		return fmt.Errorf("failed to verify database with new key: %w", err)
+	}
+	return nil
+}
+
+// getKeyVersion returns the current key version from encryption_info
+func (db *DB) getKeyVersion() (int, error) {
+	var v int
+	// Ensure row exists (schema.sql also inserts it)
+	if _, err := db.Exec("INSERT OR IGNORE INTO encryption_info (id, key_version, last_rotated_at) VALUES (1, 1, NULL)"); err != nil {
+		return 0, err
+	}
+	if err := db.QueryRow("SELECT key_version FROM encryption_info WHERE id = 1").Scan(&v); err != nil {
+		return 0, err
+	}
+	return v, nil
+}
+
+// RecordRotationSuccess writes a log entry and increments the key version
+func (db *DB) RecordRotationSuccess(backupPath string, verificationOK bool, errorStr string) error {
+	from, err := db.getKeyVersion()
+	if err != nil {
+		return fmt.Errorf("failed to read current key version: %w", err)
+	}
+	to := from + 1
+	now := time.Now().Unix()
+	if _, err := db.Exec(
+		`INSERT INTO encryption_rotation_log (from_version, to_version, rotated_at, backup_path, verification_ok, error) VALUES (?, ?, ?, ?, ?, ?)`,
+		from, to, now, backupPath, verificationOK, errorStr,
+	); err != nil {
+		return fmt.Errorf("failed to insert rotation log: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE encryption_info SET key_version = ?, last_rotated_at = ? WHERE id = 1`, to, now); err != nil {
+		return fmt.Errorf("failed to update encryption_info: %w", err)
+	}
+	return nil
+}
+
+// RecordRotationFailure logs a failed rotation attempt without incrementing key version
+func (db *DB) RecordRotationFailure(backupPath string, errorStr string) error {
+	from, err := db.getKeyVersion()
+	if err != nil {
+		return fmt.Errorf("failed to read current key version: %w", err)
+	}
+	to := from + 1
+	now := time.Now().Unix()
+	if _, err := db.Exec(
+		`INSERT INTO encryption_rotation_log (from_version, to_version, rotated_at, backup_path, verification_ok, error) VALUES (?, ?, ?, ?, ?, ?)`,
+		from, to, now, backupPath, false, errorStr,
+	); err != nil {
+		return fmt.Errorf("failed to insert rotation failure log: %w", err)
+	}
 	return nil
 }
 

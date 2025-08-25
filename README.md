@@ -206,27 +206,14 @@ make stop
 
 ### Database Encryption
 
-Optional SQLCipher encryption for enhanced data security:
+SQLCipher encryption is mandatory and automatically managed:
 
-```bash
-# Generate encryption key (64-char hex)
-openssl rand -hex 32
+- Development: On first run, a 32-byte key is generated and stored at `./data/encryption.key` with `0600` permissions. No env vars required.
+- Production: Provide the 32-byte key via a Docker secret mounted at `/run/secrets/encryption_key`.
 
-# Development (environment variable)
-SQLCIPHER_ENCRYPTION_ENABLED=true
-SQLCIPHER_ENCRYPTION_KEY=your_64_character_hex_key
+Keys are 32-byte (64 hex characters) for AES-256. Never commit keys to version control or bake them into images.
 
-# Production (Docker secrets)
-SQLCIPHER_ENCRYPTION_ENABLED=true
-SQLCIPHER_ENCRYPTION_KEY_FILE=/run/secrets/db_key
-```
-
-**Key Management**:
-- Store keys in Docker secrets or secure key management system
-- Keys are 32-byte (64 hex characters) for AES-256 encryption
-- Never commit keys to version control
-
-Note: This project requires encrypted databases from first run. There is no supported migration from unencrypted databases.
+Note: Databases must be encrypted from the first run. There is no supported migration from unencrypted databases.
 
 ## Production Deployment
 

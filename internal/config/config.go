@@ -8,15 +8,16 @@ import (
 
 // Config holds the application configuration.
 type Config struct {
-	LogLevel              slog.Level
-	ListenAddr            string
-	PhoneNumber           string
-	SignalURL             string
-	DatabasePath          string
-	LocalModel            string
-	OllamaKeepAlive       string
-	OllamaHost            string
-	SummarizationInterval string
+	LogLevel                      slog.Level
+	ListenAddr                    string
+	PhoneNumber                   string
+	SignalURL                     string
+	DatabasePath                  string
+	LocalModel                    string
+	OllamaKeepAlive               string
+	OllamaHost                    string
+	SummarizationInterval         string
+	EncryptionKeyRotationInterval string
 
 	// Generic provider configuration
 	AIProvider string
@@ -68,6 +69,9 @@ func New() *Config {
 	if summarizationInterval == "" {
 		summarizationInterval = "12h" // default
 	}
+
+	rotationInterval := os.Getenv("ENCRYPTION_KEY_ROTATION_INTERVAL")
+	// empty means disabled
 
 	signalURL := os.Getenv("SIGNAL_URL")
 	if signalURL == "" {
@@ -130,15 +134,16 @@ func New() *Config {
 	}
 
 	return &Config{
-		LogLevel:              parseLogLevel(os.Getenv("LOG_LEVEL")),
-		ListenAddr:            listenAddr,
-		PhoneNumber:           os.Getenv("SIGNAL_PHONE_NUMBER"),
-		SignalURL:             signalURL,
-		DatabasePath:          databasePath,
-		LocalModel:            localModel,
-		OllamaKeepAlive:       ollamaKeepAlive,
-		OllamaHost:            ollamaHost,
-		SummarizationInterval: summarizationInterval,
+		LogLevel:                      parseLogLevel(os.Getenv("LOG_LEVEL")),
+		ListenAddr:                    listenAddr,
+		PhoneNumber:                   os.Getenv("SIGNAL_PHONE_NUMBER"),
+		SignalURL:                     signalURL,
+		DatabasePath:                  databasePath,
+		LocalModel:                    localModel,
+		OllamaKeepAlive:               ollamaKeepAlive,
+		OllamaHost:                    ollamaHost,
+		SummarizationInterval:         summarizationInterval,
+		EncryptionKeyRotationInterval: rotationInterval,
 
 		AIProvider: aiProvider,
 
