@@ -5,11 +5,13 @@ Summarizarr is a Signal message summarizer that connects to Signal groups via We
 
 ## Architecture
 - **Signal Integration**: Connects to `signal-cli-rest-api` via WebSocket (`internal/signal/client.go`) to receive real-time messages
-- **Database Layer**: SQLCipher-encrypted SQLite with schema defined in `schema.sql` - stores users, groups, messages, summaries, and authentication data with configurable encryption
+- **Database Layer**: SQLCipher-encrypted SQLite with schema defined in `schema.sql` - stores users, groups, messages, summaries, and authentication data with mandatory encryption and automatic key management
+    - Encryption at rest via SQLCipher; key rotation is not supported in-app
 - **Authentication System**: Session-based web authentication with separate `auth_users` table (distinct from Signal users) and persistent login state stored in `sessions` table
 - **AI Processing**: Unified AI client (`internal/ai/client.go`) with multi-provider support and configurable scheduling (`internal/ai/scheduler.go`)
 - **Backend Abstraction**: Supports local AI (Ollama) and multiple OpenAI-compatible cloud providers with consistent prompt handling
 - **API Server**: HTTP server (`internal/api/server.go`) on port 8081 with authentication middleware and protected routes for summaries, groups, export, and Signal configuration
+    - No encryption key rotation endpoint
 - **Frontend**: Next.js 15 application in `web/` directory with shadcn/ui components, date filtering (default: "Today"), responsive design, and built-in authentication with login/logout and protected routes
 - **Docker Setup**: Multi-service compose with signal-cli-rest-api dependency and health checks
 
@@ -94,23 +96,19 @@ CLAUDE_API_KEY=sk-ant-xxxxx
 CLAUDE_MODEL=claude-3-sonnet
 CLAUDE_BASE_URL=http://localhost:8000/openai/v1
 
-# SQLCipher Encryption (optional)
-SQLCIPHER_ENCRYPTION_ENABLED=true
-SQLCIPHER_ENCRYPTION_KEY=your-64-character-hex-encryption-key-here
-# Or for production:
-# SQLCIPHER_ENCRYPTION_KEY_FILE=/run/secrets/sqlcipher_key
+# Encryption: always enabled
+# Development: Key auto-generated at ./data/encryption.key (0600)
+# Production: Provide key via Docker secret mounted at /run/secrets/encryption_key
 ```
 
 For local development, copy `.env.example` to `.env` and fill in your values. The Makefile automatically loads `.env` for all local development targets. For OpenAI setup and testing, see `OPENAI_TESTING.md`.
 
 ### SQLCipher Database Encryption
 
-The application supports optional database encryption using SQLCipher:
-
-**Configuration**:
-- Set `SQLCIPHER_ENCRYPTION_ENABLED=true` to enable encryption
-- For development: Use `SQLCIPHER_ENCRYPTION_KEY` with 64-character hex string
-- For production: Use `SQLCIPHER_ENCRYPTION_KEY_FILE` pointing to Docker secrets
+Encryption is mandatory and handled automatically:
+- Development: Key is generated on first run and saved to `./data/encryption.key` with `0600` permissions.
+- Production: Provide the key via a Docker secret mounted at `/run/secrets/encryption_key`.
+ - Rotation: Not supported. Keys are created/loaded automatically; rotate externally if required (service downtime recommended).
 
  
 
@@ -127,9 +125,7 @@ The application supports optional database encryption using SQLCipher:
 | SUMMARIZATION_INTERVAL          | No       | 12h       | How often to generate summaries (e.g., 1h, 12h)  |
 | LOG_LEVEL                       | No       | INFO      | Log level (DEBUG, INFO, WARN, ERROR)             |
 | DATABASE_PATH                   | No       | summarizarr.db | Database file path                          |
-| SQLCIPHER_ENCRYPTION_ENABLED    | No       | false     | Enable SQLCipher database encryption             |
-| SQLCIPHER_ENCRYPTION_KEY        | No       | -         | Encryption key for development (64 hex chars)    |
-| SQLCIPHER_ENCRYPTION_KEY_FILE   | No       | -         | Path to encryption key file for production       |
+<!-- Rotation removed: ENCRYPTION_KEY_ROTATION_INTERVAL no longer used -->
 
 #### Provider-Specific Variables
 | Provider | API Key Variable | Model Variable | Base URL Variable |
@@ -251,6 +247,7 @@ cp .env.example .env
 - All custom test and debug scripts are located in `cmd/testing/`
 - `cmd/testing/parse_sample.go`: Tests Signal message parsing with sample data
 - Unit tests: `go test ./...` (requires full schema including `groups` table)
+- Rotation tests: located under `internal/encryption`, `internal/database`, and `internal/api` (integration)
 - Example Signal API message format in `internal/signal/message_test.go`
 - Manual testing via Docker compose (no integration tests)
 
@@ -270,9 +267,10 @@ make docker       # Equivalent to: docker compose up --build -d
 - Only processes group messages (ignores DMs)
 
 ## Database Schema Notes
-- **Encryption**: SQLCipher with AES-256 encryption, configurable via environment variables
-- **Key Management**: Supports environment variables (development) and Docker secrets (production)
- 
+- **Encryption**: SQLCipher with AES-256 encryption (mandatory)
+- **Key Management**: Automatic — dev key at `./data/encryption.key`; production key via `/run/secrets/encryption_key`
+ - **Rotation Metadata**: Not used; no rotation tables are created in new installs
+
 - **Build Requirements**: CGO_ENABLED=1 and sqlite_crypt build tag for SQLCipher support
 - Foreign key relationships: messages → users/groups, summaries → groups
 - Timestamps stored as Unix epoch integers
@@ -284,6 +282,7 @@ make docker       # Equivalent to: docker compose up --build -d
 
 ## Common Tasks
 - **Add new endpoints**: Extend `internal/api/server.go` with new handlers
+- **Rotate encryption key**: Not supported by the service; perform offline rotation if needed
 - **Modify AI prompts**: Update summarization logic in `internal/ai/client.go`
 - **Change message filtering**: Modify `SaveMessage` logic in `internal/database/db.go`
 - **Adjust scheduling**: Update interval parsing and ticker logic in scheduler

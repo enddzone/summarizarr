@@ -6,7 +6,7 @@
 #
 # Replace the volumes section with local directory mounts:
 #   volumes:
-#     - ./data:/data                                          # Database and application data
+#     - ./data:/data                                          # Database and application data (includes encryption.key)
 #     - ./signal-cli-config:/home/.local/share/signal-cli     # Signal CLI configuration
 #
 # Without local directory mounts, ALL DATA WILL BE LOST when containers are removed!
@@ -63,9 +63,7 @@ services:
       - SIGNAL_URL=signal-cli:8080
       - LOG_LEVEL=${LOG_LEVEL:-info}
 
-      # Encryption Configuration (SQLCipher)
-      - SQLCIPHER_ENCRYPTION_ENABLED=${SQLCIPHER_ENCRYPTION_ENABLED:-true}
-      - SQLCIPHER_ENCRYPTION_KEY_FILE=/run/secrets/sqlcipher_encryption_key
+      # SQLCipher is mandatory; key provided via Docker secret at /run/secrets/encryption_key
       - CGO_ENABLED=1
 
       # Authentication Configuration
@@ -81,7 +79,7 @@ services:
       - summarizarr-data:/data
       - summarizarr-config:/config
     secrets:
-      - sqlcipher_encryption_key
+      - encryption_key
     depends_on:
       signal-cli:
         condition: service_healthy
@@ -155,6 +153,6 @@ volumes:
   #   driver: local
 
 secrets:
-  sqlcipher_encryption_key:
-    file: ./docker/secrets/sqlcipher_encryption_key
+  encryption_key:
+    file: ./docker/secrets/encryption_key
 

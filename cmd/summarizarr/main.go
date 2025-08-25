@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,6 +13,7 @@ import (
 	"summarizarr/internal/api"
 	"summarizarr/internal/config"
 	"summarizarr/internal/database"
+	"summarizarr/internal/encryption"
 	"summarizarr/internal/frontend"
 	"summarizarr/internal/ollama"
 	signalclient "summarizarr/internal/signal"
@@ -43,14 +46,21 @@ func main() {
 		}
 	}
 
-	// Load encryption configuration
-	encryptionConfig := config.EncryptionConfig{
-		Enabled: os.Getenv("SQLCIPHER_ENCRYPTION_ENABLED") == "true",
-		KeyFile: os.Getenv("SQLCIPHER_ENCRYPTION_KEY_FILE"),
-		KeyEnv:  "SQLCIPHER_ENCRYPTION_KEY",
+	// Preflight: If an existing DB is plaintext (unencrypted), back it up and allow creation of a fresh encrypted DB
+	if err := backupIfPlaintext(cfg.DatabasePath); err != nil {
+		slog.Error("Preflight encryption check failed", "error", err)
+		os.Exit(1)
 	}
 
-	db, err := database.NewDB(cfg.DatabasePath, encryptionConfig)
+	// Mandatory encryption: load or create key using manager
+	encMgr := encryption.NewManager(cfg.DatabasePath)
+	encKey, err := encMgr.LoadOrCreateKey()
+	if err != nil {
+		slog.Error("Failed to obtain encryption key", "error", err)
+		os.Exit(1)
+	}
+
+	db, err := database.NewDB(cfg.DatabasePath, encKey)
 	if err != nil {
 		slog.Error("Failed to connect to database", "error", err)
 		os.Exit(1)
@@ -106,7 +116,7 @@ func main() {
 	}
 
 	// API server listen address is configurable via LISTEN_ADDR (default :8080)
-	apiServer := api.NewServer(cfg.ListenAddr, db.DB, frontendFS)
+	apiServer := api.NewServerWithAppDB(cfg.ListenAddr, db, frontendFS)
 
 	go apiServer.Start()
 
@@ -135,11 +145,93 @@ func main() {
 	scheduler := ai.NewScheduler(db, aiClient, summarizationInterval)
 	go scheduler.Start(ctx)
 
+	// Rotation scheduler removed
+
 	<-ctx.Done()
 	slog.Info("Shutting down Summarizarr...")
 	if err := apiServer.Shutdown(ctx); err != nil {
 		slog.Error("API server shutdown error", "error", err)
 	}
+}
+
+// backupIfPlaintext inspects the first 16 bytes of the DB file. If it matches the
+// plain SQLite header ("SQLite format 3\x00"), it moves the file (and sidecars) to a timestamped backup
+// so the application can create a new encrypted database on first run.
+func backupIfPlaintext(dbPath string) error {
+	if dbPath == "" || dbPath == ":memory:" {
+		return nil
+	}
+
+	// Validate path early to avoid surprising errors later
+	if err := validateDatabasePath(dbPath); err != nil {
+		return err
+	}
+    f, err := os.Open(dbPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // nothing to do
+		}
+		return fmt.Errorf("failed to open database file: %w", err)
+	}
+    defer func() { _ = f.Close() }()
+	hdr := make([]byte, 16)
+	n, err := f.Read(hdr)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("failed to read database header: %w", err)
+	}
+	if n < 16 {
+		return nil // small or empty file; let normal init proceed
+	}
+	if string(hdr) == "SQLite format 3\x00" {
+		ts := time.Now().Format("20060102_150405")
+		backupPath := filepath.Join(filepath.Dir(dbPath), fmt.Sprintf("%s_backup_%s.db", filepath.Base(dbPath), ts))
+		if err := os.Rename(dbPath, backupPath); err != nil {
+			return fmt.Errorf("failed to back up plaintext DB: %w", err)
+		}
+		// Best-effort move sidecar files too
+		_ = moveIfExists(dbPath+"-wal", backupPath+"-wal")
+		_ = moveIfExists(dbPath+"-shm", backupPath+"-shm")
+		slog.Warn("Detected plaintext SQLite DB; moved to backup to create encrypted DB", "from", dbPath, "to", backupPath)
+	}
+	return nil
+}
+
+func moveIfExists(src, dst string) error {
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return os.Rename(src, dst)
+}
+
+// validateDatabasePath ensures dbPath is a file path (not a dir), resolves absolute path,
+// and that its parent directory exists and is accessible. It allows non-existent files.
+func validateDatabasePath(dbPath string) error {
+	if dbPath == "" || dbPath == ":memory:" {
+		return nil
+	}
+	abs, err := filepath.Abs(dbPath)
+	if err != nil {
+		return fmt.Errorf("invalid database path: %w", err)
+	}
+	// Ensure parent dir exists (create earlier in main, but validate here too)
+	dir := filepath.Dir(abs)
+	if dir == "." || dir == "" {
+		return nil
+	}
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("database directory does not exist: %s", dir)
+		}
+		return fmt.Errorf("failed to stat database directory: %w", err)
+	}
+	// If a path exists and is directory, reject
+	if fi, err := os.Stat(abs); err == nil && fi.IsDir() {
+		return fmt.Errorf("database path is a directory: %s", abs)
+	}
+	return nil
 }
 
 // testAIProvider tests the AI provider and ensures it's ready

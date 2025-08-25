@@ -50,7 +50,7 @@ RUN CGO_ENABLED=1 \
     CGO_CFLAGS="$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
     CGO_LDFLAGS="$(pkg-config --libs sqlcipher) $(pkg-config --libs libcrypto libssl)" \
     go build \
-    -tags="sqlite_crypt" \
+    -tags="sqlite_crypt libsqlite3" \
     -ldflags="-w -s \
     -X 'summarizarr/internal/version.Version=${VERSION}' \
     -X 'summarizarr/internal/version.GitCommit=${GIT_COMMIT}' \
