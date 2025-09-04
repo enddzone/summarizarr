@@ -66,3 +66,5 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expiry);
+
+-- Rotation metadata tables removed: encryption_info and encryption_rotation_log (kept only on existing installs)

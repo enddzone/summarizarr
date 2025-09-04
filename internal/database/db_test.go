@@ -4,15 +4,17 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-	"summarizarr/internal/config"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestGetSummaries(t *testing.T) {
-	// Create a temporary test database using the NewDB constructor
-	encryptionConfig := config.EncryptionConfig{Enabled: false}
-	testDB, err := createTestDB(t, encryptionConfig)
+	// Skip if SQLCipher is not available in this environment
+	if !hasSQLCipher(t) {
+		t.Skip("SQLCipher not available; skipping TestGetSummaries")
+	}
+	// Create a temporary test database using the NewDB constructor (mandatory encryption)
+	testDB, err := createTestDB(t)
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
@@ -40,6 +42,14 @@ func TestGetSummaries(t *testing.T) {
 	now := time.Now()
 	start := now.Add(-time.Hour).Unix()
 	end := now.Unix()
+
+	// Ensure referenced group rows exist to satisfy FK constraints
+	if _, err := testDB.Exec(`INSERT INTO groups (id, group_id, name) VALUES (1, 'g-1', 'Group 1')`); err != nil {
+		t.Fatalf("Failed to insert group 1: %v", err)
+	}
+	if _, err := testDB.Exec(`INSERT INTO groups (id, group_id, name) VALUES (2, 'g-2', 'Group 2')`); err != nil {
+		t.Fatalf("Failed to insert group 2: %v", err)
+	}
 
 	// Insert first summary
 	_, err = testDB.Exec(`
@@ -104,18 +114,14 @@ func TestGetSummaries(t *testing.T) {
 // Helper functions for testing
 
 // createTestDB creates a test database with optional encryption
-func createTestDB(t *testing.T, encryptionConfig config.EncryptionConfig) (*DB, error) {
+func createTestDB(t *testing.T) (*DB, error) {
 	t.Helper()
-	
-	if encryptionConfig.Enabled {
-		// Create temporary file for encrypted database
-		tmpDir := t.TempDir()
-		dbPath := filepath.Join(tmpDir, "test_encrypted.db")
-		return NewDB(dbPath, encryptionConfig)
-	} else {
-		// Use in-memory database for unencrypted tests
-		return NewDB(":memory:", encryptionConfig)
-	}
+	// Always use encrypted database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_encrypted.db")
+	// Use deterministic test key
+	key := "aeb525e0ac9f8ace668c01e381d0d5a772d004623abe4ec7a2d9100d986101d9"
+	return NewDB(dbPath, key)
 }
 
 // initTestSchema initializes the test database schema

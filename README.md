@@ -177,7 +177,11 @@ Backend encryption features require SQLCipher when running locally:
 - macOS: `brew install sqlcipher`
 - Ubuntu/Debian: `sudo apt-get install sqlcipher libsqlcipher-dev pkg-config libssl-dev`
 
-Tests: `make test` will automatically use SQLCipher if available (CGO + `-tags sqlite_crypt`). If SQLCipher isn't installed, backend tests run without encryption and encryption-specific tests may be skipped.
+Tests: `make test` will automatically use SQLCipher if available (CGO + `-tags sqlite_crypt libsqlite3`). If SQLCipher isn't installed, backend tests run without encryption and encryption-specific tests may be skipped.
+
+Build tags: we pass both `sqlite_crypt` and `libsqlite3`.
+- `sqlite_crypt` enables SQLCipher-specific paths in our code and dependencies.
+- `libsqlite3` ensures the mattn/go-sqlite3 driver links against system libsqlite3/sqlcipher on some platforms (notably Alpine/musl) for predictable linkage. This dual-tag approach was tested on macOS, Ubuntu CI, and Alpine-based Docker builds.
 
 # Stop all
 make stop
@@ -206,27 +210,14 @@ make stop
 
 ### Database Encryption
 
-Optional SQLCipher encryption for enhanced data security:
+SQLCipher encryption is mandatory and automatically managed:
 
-```bash
-# Generate encryption key (64-char hex)
-openssl rand -hex 32
+- Development: On first run, a 32-byte key is generated and stored at `./data/encryption.key` with `0600` permissions. No env vars required.
+- Production: Provide the 32-byte key via a Docker secret mounted at `/run/secrets/encryption_key`.
 
-# Development (environment variable)
-SQLCIPHER_ENCRYPTION_ENABLED=true
-SQLCIPHER_ENCRYPTION_KEY=your_64_character_hex_key
+Keys are 32-byte (64 hex characters) for AES-256. Never commit keys to version control or bake them into images.
 
-# Production (Docker secrets)
-SQLCIPHER_ENCRYPTION_ENABLED=true
-SQLCIPHER_ENCRYPTION_KEY_FILE=/run/secrets/db_key
-```
-
-**Key Management**:
-- Store keys in Docker secrets or secure key management system
-- Keys are 32-byte (64 hex characters) for AES-256 encryption
-- Never commit keys to version control
-
-Note: This project requires encrypted databases from first run. There is no supported migration from unencrypted databases.
+Note: Databases must be encrypted from the first run. There is no supported migration from unencrypted databases.
 
 ## Production Deployment
 

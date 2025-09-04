@@ -20,6 +20,7 @@ import (
 	"strings"
 	"summarizarr/internal/auth"
 	"summarizarr/internal/database"
+
 	"summarizarr/internal/version"
 	"time"
 )
@@ -76,13 +77,17 @@ func WithSignalValidation(validate bool) ServerOption {
 }
 
 // NewServer creates a new API server with default options.
-// Maintained for backward compatibility.
+// Backward-compatible signature that accepts *sql.DB (used in tests).
 func NewServer(addr string, db *sql.DB, frontendFS fs.FS) *Server {
 	return NewServerWithOptions(addr, db, frontendFS)
 }
 
 // NewServerWithOptions creates a new API server with configurable options.
+// Backward-compatible signature that accepts *sql.DB (used in tests).
 func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...ServerOption) *Server {
+	// NOTE: This path intentionally wraps the provided *sql.DB (used by tests)
+	// and does not carry DataSourceName metadata.
+	appDB := &database.DB{DB: db}
 	// Apply default options
 	opts := &ServerOptions{
 		SignalURL:      getSignalURL(),
@@ -106,14 +111,14 @@ func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...
 	}
 
 	mux := http.NewServeMux()
-	
+
 	// Initialize auth components
-	sessionManager := auth.NewSessionManager(db)
-	userStore := auth.NewUserStore(db)
+	sessionManager := auth.NewSessionManager(appDB.DB)
+	userStore := auth.NewUserStore(appDB.DB)
 	authHandlers := NewAuthHandlers(userStore, sessionManager)
-	
+
 	s := &Server{
-		db:             &database.DB{DB: db},
+		db: appDB,
 		server: &http.Server{
 			Addr:    addr,
 			Handler: mux,
@@ -127,10 +132,10 @@ func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...
 
 	// CSRF protection middleware
 	csrfProtection := auth.NewCSRFProtection(sessionManager)
-	
+
 	// Rate limiting for authentication endpoints
 	authRateLimiter := auth.NewAuthRateLimiter()
-	
+
 	// Public auth routes (with session middleware but no auth required)
 	mux.Handle("/api/auth/csrf-token", sessionMiddleware(http.HandlerFunc(s.authHandlers.CSRFToken)))
 	mux.Handle("/api/auth/login", sessionMiddleware(authRateLimiter.Middleware(csrfProtection.Middleware(http.HandlerFunc(s.authHandlers.Login)))))
@@ -143,7 +148,89 @@ func NewServerWithOptions(addr string, db *sql.DB, frontendFS fs.FS, options ...
 	mux.Handle("/api/summaries/", sessionMiddleware(sessionManager.RequireAuth(csrfProtection.Middleware(http.HandlerFunc(s.handleDeleteSummary))))) // DELETE /api/summaries/{id}
 	mux.Handle("/api/groups", sessionMiddleware(sessionManager.RequireAuth(http.HandlerFunc(s.handleGetGroups))))
 	mux.Handle("/api/export", sessionMiddleware(sessionManager.RequireAuth(http.HandlerFunc(s.handleExport))))
-	
+	// Encryption key rotation removed
+
+	// Public routes (no auth required)
+	mux.HandleFunc("/api/signal/config", s.handleSignalConfig)
+	mux.HandleFunc("/api/signal/register", s.handleSignalRegister)
+	mux.HandleFunc("/api/signal/status", s.handleSignalStatus)
+	mux.HandleFunc("/api/signal/qrcode", s.handleSignalQrCode)
+	mux.HandleFunc("/api/version", s.handleVersion)
+	mux.HandleFunc("/health", s.handleHealth)
+
+	// Frontend static files
+	if frontendFS != nil {
+		mux.Handle("/", s.serveFrontend(frontendFS))
+	}
+
+	return s
+}
+
+// NewServerWithAppDB is a convenience constructor that accepts *database.DB directly (used by main).
+func NewServerWithAppDB(addr string, appDB *database.DB, frontendFS fs.FS, options ...ServerOption) *Server {
+	// Build the server directly to preserve database metadata (e.g., DataSourceName)
+	// Apply default options
+	opts := &ServerOptions{
+		SignalURL:      getSignalURL(),
+		ValidateSignal: true,
+	}
+
+	// Apply provided options
+	for _, option := range options {
+		option(opts)
+	}
+
+	slog.Info("Initializing API server", "signal_url", opts.SignalURL, "listen_addr", addr)
+
+	// Validate Signal URL if enabled
+	if opts.ValidateSignal {
+		if err := validateSignalURL(opts.SignalURL); err != nil {
+			slog.Warn("Signal CLI validation failed during startup", "signal_url", opts.SignalURL, "error", err)
+		} else {
+			slog.Info("Signal CLI connectivity verified", "signal_url", opts.SignalURL)
+		}
+	}
+
+	mux := http.NewServeMux()
+
+	// Initialize auth components
+	sessionManager := auth.NewSessionManager(appDB.DB)
+	userStore := auth.NewUserStore(appDB.DB)
+	authHandlers := NewAuthHandlers(userStore, sessionManager)
+
+	s := &Server{
+		db: appDB,
+		server: &http.Server{
+			Addr:    addr,
+			Handler: mux,
+		},
+		sessionManager: sessionManager,
+		authHandlers:   authHandlers,
+	}
+
+	// Apply session middleware to all routes
+	sessionMiddleware := sessionManager.Manager.LoadAndSave
+
+	// CSRF protection middleware
+	csrfProtection := auth.NewCSRFProtection(sessionManager)
+
+	// Rate limiting for authentication endpoints
+	authRateLimiter := auth.NewAuthRateLimiter()
+
+	// Public auth routes (with session middleware but no auth required)
+	mux.Handle("/api/auth/csrf-token", sessionMiddleware(http.HandlerFunc(s.authHandlers.CSRFToken)))
+	mux.Handle("/api/auth/login", sessionMiddleware(authRateLimiter.Middleware(csrfProtection.Middleware(http.HandlerFunc(s.authHandlers.Login)))))
+	mux.Handle("/api/auth/logout", sessionMiddleware(csrfProtection.Middleware(http.HandlerFunc(s.authHandlers.Logout))))
+	mux.Handle("/api/auth/me", sessionMiddleware(http.HandlerFunc(s.authHandlers.Me)))
+	mux.Handle("/api/auth/register", sessionMiddleware(authRateLimiter.Middleware(csrfProtection.Middleware(http.HandlerFunc(s.authHandlers.Register)))))
+
+	// Protected API routes (with session middleware and auth requirement)
+	mux.Handle("/api/summaries", sessionMiddleware(sessionManager.RequireAuth(http.HandlerFunc(s.handleGetSummaries))))
+	mux.Handle("/api/summaries/", sessionMiddleware(sessionManager.RequireAuth(csrfProtection.Middleware(http.HandlerFunc(s.handleDeleteSummary))))) // DELETE /api/summaries/{id}
+	mux.Handle("/api/groups", sessionMiddleware(sessionManager.RequireAuth(http.HandlerFunc(s.handleGetGroups))))
+	mux.Handle("/api/export", sessionMiddleware(sessionManager.RequireAuth(http.HandlerFunc(s.handleExport))))
+	// Encryption key rotation removed
+
 	// Public routes (no auth required)
 	mux.HandleFunc("/api/signal/config", s.handleSignalConfig)
 	mux.HandleFunc("/api/signal/register", s.handleSignalRegister)
@@ -343,6 +430,8 @@ func (s *Server) handleDeleteSummary(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(r.Context(), "Failed to write response", "error", err)
 	}
 }
+
+// Rotation endpoint removed
 
 // Start starts the API server.
 func (s *Server) Start() {

@@ -6,7 +6,7 @@ summarizarr.db
 sample_response.json
 test_parse.db
 models
-summarizarr
+bin/summarizarr
 web/node_modules
 web/.next
 web/.env.local
@@ -43,4 +43,7 @@ docker/secrets/sqlcipher_encryption_key
 secrets/
 run/secrets/
 data/summarizarr_backup_20250822_220427.db
+data/encryption.key
 data
+.gocache
+.gomodcache/cache/download/github.com

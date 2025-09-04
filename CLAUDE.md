@@ -16,7 +16,9 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 **Database Layer**: 
 - SQLCipher-encrypted SQLite with schema in `schema.sql`
 - Stores users, groups, messages, summaries, and authentication data
-- Configurable encryption via `SQLCIPHER_ENCRYPTION_ENABLED` environment variable
+- Mandatory encryption with automatic key management
+  - Production: reads key from Docker secret `/run/secrets/encryption_key`
+  - Development: auto-generates key on first run and stores at `./data/encryption.key` (0600)
 - Foreign key relationships and automatic migration system
 - Separate auth_users table for web authentication (distinct from Signal users)
 - Session storage for persistent login state
@@ -30,8 +32,9 @@ Summarizarr is an AI-powered Signal message summarizer that connects to Signal g
 - Centralized prompt management and anonymization
 
 **API Server**: 
-- HTTP server in `internal/api/server.go` on port 8081
+- HTTP server in `internal/api/server.go` (listen address configurable via `LISTEN_ADDR`, default 8081)
 - RESTful endpoints for summaries, groups, export, Signal configuration, and authentication
+ - No encryption key rotation endpoint
 - Session-based authentication with SQLite storage
 - Protected routes using middleware for authenticated access
 
@@ -95,6 +98,8 @@ make test-frontend
 go run cmd/testing/main.go
 ```
 
+Rotation-related tests have been removed. Some backend tests still require SQLCipher to be installed and available.
+
 ### Build & Deploy
 ```bash
 # Local Go build with SQLCipher support
@@ -119,8 +124,8 @@ All configuration uses environment variables. For local development:
    - `AI_PROVIDER` (local/openai/groq/gemini/claude)
    - Provider-specific API keys (if using cloud providers)
    - `SUMMARIZATION_INTERVAL` (e.g., 1h, 12h)
-   - `SQLCIPHER_ENCRYPTION_ENABLED` (true/false)
-   - `SQLCIPHER_ENCRYPTION_KEY` (for development) or `SQLCIPHER_ENCRYPTION_KEY_FILE` (for production)
+
+Encryption is always enabled. No encryption env vars are needed. In development, the key is created automatically at `./data/encryption.key`. In production, provide the key via a Docker secret mounted at `/run/secrets/encryption_key`.
 
 The Makefile automatically loads `.env` for local development.
 
@@ -140,19 +145,22 @@ The Makefile automatically loads `.env` for local development.
 
 **Provider-Specific Defaults**: Each provider includes optimized defaults for base URLs and models.
 
-### SQLCipher Encryption Configuration
+### Mandatory SQLCipher Encryption
 
-**Encryption Support**: The application supports SQLCipher for database encryption:
-- `SQLCIPHER_ENCRYPTION_ENABLED=true/false`: Enable/disable database encryption
-- **Development**: Use `SQLCIPHER_ENCRYPTION_KEY` environment variable with 64-character hex string
-- **Production**: Use `SQLCIPHER_ENCRYPTION_KEY_FILE` pointing to Docker secrets or secure key file
+Database encryption is mandatory. Key management is automatic:
+- Development: Key is generated on first run and stored at `./data/encryption.key` with `0600` permissions.
+- Production: Supply the key via Docker secrets mounted at `/run/secrets/encryption_key`.
 
-Note: Databases must be encrypted from first run; no migration tool is provided.
+Note: Databases must be encrypted from the first run; no migration tool is provided to convert plaintext DBs.
 
-**Build Requirements**: SQLCipher requires CGO and specific build tags:
+**Build Requirements**: SQLCipher requires CGO and the sqlite_crypt build tag:
 ```bash
 CGO_ENABLED=1 go build -tags="sqlite_crypt" cmd/summarizarr/main.go
 ```
+
+#### Key Rotation
+
+Not supported by the service. Keys are created/loaded automatically; if rotation is required, perform it offline with the service stopped and external tooling. Existing installs may contain legacy rotation tables; new installs do not create them.
 
 ## Key Go Patterns
 
@@ -181,13 +189,13 @@ type DB interface {
 - `github.com/sashabaranov/go-openai`: OpenAI API client  
 - `github.com/coder/websocket`: WebSocket client for Signal
 - Next.js 15 with TypeScript and shadcn/ui components
-- **SQLCipher library**: Required for encryption support (installed via Homebrew on macOS)
+- **SQLCipher library**: Required for encryption (install via Homebrew on macOS)
 
 ## Database Schema
 
-- **Encryption**: SQLCipher with AES-256 encryption, 256k KDF iterations, 4096-byte pages
+- **Encryption**: SQLCipher with AES-256 encryption, 256k KDF iterations, 4096-byte pages (mandatory)
 - Foreign keys: messages → users/groups, summaries → groups
 - Unix timestamps for all time fields
 - Enhanced message fields: quotes, reactions, message types
 - Automatic schema migration on startup
-- **Key Management**: Supports environment variables (dev) and Docker secrets (production)
+- **Key Management**: Automatic — dev key at `./data/encryption.key`; production key via `/run/secrets/encryption_key`

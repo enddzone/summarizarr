@@ -59,15 +59,8 @@ services:
       - DATABASE_PATH=/data/summarizarr.db
       - SIGNAL_URL=signal-cli:8080
       - LOG_LEVEL=debug # Debug level for development
-
-      # Authentication Configuration
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-}
-      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:8081}
-
-      # Encryption Configuration
-      - SQLCIPHER_ENCRYPTION_ENABLED=${SQLCIPHER_ENCRYPTION_ENABLED:-false}
-      - SQLCIPHER_ENCRYPTION_KEY=${SQLCIPHER_ENCRYPTION_KEY:-}
-      - SQLCIPHER_ENCRYPTION_KEY_FILE=${SQLCIPHER_ENCRYPTION_KEY_FILE:-}
+      
+  # Encryption: key auto-generated to /data/encryption.key in development
     ports:
       - "8081:8080" # Unified API + frontend
     volumes:

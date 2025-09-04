@@ -69,6 +69,8 @@ func New() *Config {
 		summarizationInterval = "12h" // default
 	}
 
+	// rotation feature removed
+
 	signalURL := os.Getenv("SIGNAL_URL")
 	if signalURL == "" {
 		signalURL = "signal-cli-rest-api:8080" // default for Docker

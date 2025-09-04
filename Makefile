@@ -29,31 +29,31 @@ signal: ## Start signal-cli-rest-api container
 backend: ## Run Go backend locally with SQLCipher (requires signal container)
 	@echo "$(YELLOW)Starting Go backend locally on :8081 with SQLCipher...$(NC)"
 	@if [ ! -f .env ]; then echo "$(RED)Warning: .env not found. Copy .env.example to .env$(NC)"; fi
-	@if command -v pkg-config >/dev/null 2>&1; then \
+	if command -v pkg-config >/dev/null 2>&1; then \
 		CGO_ENABLED=1 \
 		CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
 		CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" \
-		LISTEN_ADDR=:8081 go run -tags="sqlite_crypt" cmd/summarizarr/main.go; \
+	LISTEN_ADDR=:8081 go run -tags="sqlite_crypt libsqlite3" cmd/summarizarr/main.go; \
 	else \
 		CGO_ENABLED=1 \
 		CGO_CFLAGS="-I$$(brew --prefix sqlcipher)/include/sqlcipher -DSQLITE_HAS_CODEC" \
 		CGO_LDFLAGS="-L$$(brew --prefix sqlcipher)/lib -lsqlcipher -L$$(brew --prefix openssl@3)/lib -lssl -lcrypto" \
-		LISTEN_ADDR=:8081 go run -tags="sqlite_crypt" cmd/summarizarr/main.go; \
+	LISTEN_ADDR=:8081 go run -tags="sqlite_crypt libsqlite3" cmd/summarizarr/main.go; \
 	fi
 
 backend-bg: ## Run Go backend in background with SQLCipher and local config
 	@echo "$(YELLOW)Starting Go backend in background on :8081 with SQLCipher...$(NC)"
 	@if [ ! -f .env ]; then echo "$(RED)Warning: .env not found. Copy .env.example to .env$(NC)"; fi
-	@if command -v pkg-config >/dev/null 2>&1; then \
+	if command -v pkg-config >/dev/null 2>&1; then \
 		export DATABASE_PATH=./data/summarizarr.db SIGNAL_URL=localhost:8080 LISTEN_ADDR=:8081 CGO_ENABLED=1 \
 		CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
 		CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" && \
-		nohup go run -tags="sqlite_crypt" cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid; \
+	nohup go run -tags="sqlite_crypt libsqlite3" cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid; \
 	else \
 		export DATABASE_PATH=./data/summarizarr.db SIGNAL_URL=localhost:8080 LISTEN_ADDR=:8081 CGO_ENABLED=1 \
 		CGO_CFLAGS="-I$$(brew --prefix sqlcipher)/include/sqlcipher -DSQLITE_HAS_CODEC" \
 		CGO_LDFLAGS="-L$$(brew --prefix sqlcipher)/lib -lsqlcipher -L$$(brew --prefix openssl@3)/lib -lssl -lcrypto" && \
-		nohup go run -tags="sqlite_crypt" cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid; \
+	nohup go run -tags="sqlite_crypt libsqlite3" cmd/summarizarr/main.go > backend.log 2>&1 & echo $$! > backend.pid; \
 	fi
 	@echo "$(GREEN)Backend started in background (PID: $$(cat backend.pid))$(NC)"
 
@@ -213,33 +213,33 @@ build-frontend: ## Build Next.js frontend and copy to internal/frontend/static/
 # SQLCipher builds
 build-encrypted: build-frontend ## Build with SQLCipher support (CGO enabled)
 	@echo "$(YELLOW)Building Go backend with SQLCipher support...$(NC)"
-	@if command -v pkg-config >/dev/null 2>&1; then \
+	if command -v pkg-config >/dev/null 2>&1; then \
 		CGO_ENABLED=1 \
 		CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
 		CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" \
-		go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go; \
+	go build -tags="sqlite_crypt libsqlite3" -o summarizarr cmd/summarizarr/main.go; \
 	else \
 		echo "$(RED)pkg-config not found. Trying with Homebrew paths...$(NC)"; \
 		CGO_ENABLED=1 \
 		CGO_CFLAGS="-I$$(brew --prefix sqlcipher)/include/sqlcipher -DSQLITE_HAS_CODEC" \
 		CGO_LDFLAGS="-L$$(brew --prefix sqlcipher)/lib -lsqlcipher -L$$(brew --prefix openssl@3)/lib -lssl -lcrypto" \
-		go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go; \
+	go build -tags="sqlite_crypt libsqlite3" -o summarizarr cmd/summarizarr/main.go; \
 	fi
 	@echo "$(GREEN)Build complete with SQLCipher: ./summarizarr$(NC)"
 
 build: build-frontend ## Build the entire application (frontend + backend with SQLCipher)
 	@echo "$(YELLOW)Building Go backend with embedded frontend and SQLCipher support...$(NC)"
-	@if command -v pkg-config >/dev/null 2>&1; then \
+	if command -v pkg-config >/dev/null 2>&1; then \
 		CGO_ENABLED=1 \
 		CGO_CFLAGS="$$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
 		CGO_LDFLAGS="$$(pkg-config --libs sqlcipher) $$(pkg-config --libs openssl)" \
-		go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go; \
+	go build -tags="sqlite_crypt libsqlite3" -o summarizarr cmd/summarizarr/main.go; \
 	else \
 		echo "$(YELLOW)pkg-config not found. Trying with Homebrew paths...$(NC)"; \
 		CGO_ENABLED=1 \
 		CGO_CFLAGS="-I$$(brew --prefix sqlcipher)/include/sqlcipher -DSQLITE_HAS_CODEC" \
 		CGO_LDFLAGS="-L$$(brew --prefix sqlcipher)/lib -lsqlcipher -L$$(brew --prefix openssl@3)/lib -lssl -lcrypto" \
-		go build -tags="sqlite_crypt" -o summarizarr cmd/summarizarr/main.go; \
+	go build -tags="sqlite_crypt libsqlite3" -o summarizarr cmd/summarizarr/main.go; \
 	fi
 	@echo "$(GREEN)Build complete: ./summarizarr$(NC)"
 

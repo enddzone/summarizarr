@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"os"
 	"path/filepath"
 	"summarizarr/internal/config"
 	"summarizarr/internal/signal"
@@ -36,20 +35,12 @@ func TestNewDBWithEncryption(t *testing.T) {
 	// Generate test encryption key
 	testKey := generateTestEncryptionKey()
 
-	// Set environment variable for test
-	t.Setenv("TEST_ENCRYPTION_KEY", testKey)
-
-	encryptionConfig := config.EncryptionConfig{
-		Enabled: true,
-		KeyEnv:  "TEST_ENCRYPTION_KEY",
-	}
-
 	// Create temporary file for database
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test_encrypted.db")
 
 	// Test creating encrypted database
-	db, err := NewDB(dbPath, encryptionConfig)
+	db, err := NewDB(dbPath, testKey)
 	if err != nil {
 		t.Fatalf("Failed to create encrypted database: %v", err)
 	}
@@ -88,34 +79,29 @@ func TestNewDBWithEncryption(t *testing.T) {
 
 // TestNewDBWithoutEncryption tests database creation with encryption disabled
 func TestNewDBWithoutEncryption(t *testing.T) {
-	encryptionConfig := config.EncryptionConfig{
-		Enabled: false,
+	if !hasSQLCipher(t) {
+		t.Skip("SQLCipher not available in this environment; skipping mandatory encryption test")
 	}
-
-	// Create in-memory database
-	db, err := NewDB(":memory:", encryptionConfig)
+	// With mandatory encryption, NewDB requires a key even for :memory:
+	testKey := generateTestEncryptionKey()
+	db, err := NewDB(":memory:", testKey)
 	if err != nil {
-		t.Fatalf("Failed to create unencrypted database: %v", err)
+		t.Fatalf("Failed to create encrypted in-memory database: %v", err)
 	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			t.Logf("Warning: failed to close database: %v", err)
-		}
-	}()
+	defer func() { _ = db.Close() }()
 
-	// Initialize schema
 	if err := db.initTestSchema(); err != nil {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
-
-	// Test basic operations
 	if err := db.Ping(); err != nil {
-		t.Fatalf("Failed to ping unencrypted database: %v", err)
+		t.Fatalf("Failed to ping encrypted in-memory database: %v", err)
 	}
 }
 
 // TestEncryptionKeyValidation tests various encryption key validation scenarios
 func TestEncryptionKeyValidation(t *testing.T) {
+	// Some scenarios require SQLCipher to be present; if not, skip those cases conditionally
+	sqlcipher := hasSQLCipher(t)
 	tests := []struct {
 		name        string
 		key         string
@@ -125,7 +111,7 @@ func TestEncryptionKeyValidation(t *testing.T) {
 		{
 			name:        "Valid 64-character hex key",
 			key:         generateTestEncryptionKey(),
-			shouldError: false,
+			shouldError: !sqlcipher, // if SQLCipher missing, NewDB will fail the verification
 		},
 		{
 			name:        "Too short key",
@@ -156,17 +142,10 @@ func TestEncryptionKeyValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set test key in environment
-			t.Setenv("TEST_KEY_VALIDATION", tt.key)
-
-			encryptionConfig := config.EncryptionConfig{
-				Enabled: true,
-				KeyEnv:  "TEST_KEY_VALIDATION",
-			}
-
 			tmpDir := t.TempDir()
 			dbPath := filepath.Join(tmpDir, "test_validation.db")
 
-			db, err := NewDB(dbPath, encryptionConfig)
+			db, err := NewDB(dbPath, tt.key)
 
 			if tt.shouldError {
 				if err == nil {
@@ -181,7 +160,10 @@ func TestEncryptionKeyValidation(t *testing.T) {
 				}
 			} else {
 				if err != nil {
-					t.Errorf("Expected no error for valid key, got: %v", err)
+					// If SQLCipher is unavailable, we expect an error; otherwise, this is a real failure
+					if sqlcipher {
+						t.Errorf("Expected no error for valid key, got: %v", err)
+					}
 				}
 				if db != nil {
 					_ = db.Close()
@@ -193,31 +175,15 @@ func TestEncryptionKeyValidation(t *testing.T) {
 
 // TestEncryptionEnabledButNoKey tests error handling when encryption is enabled but no key provided
 func TestEncryptionEnabledButNoKey(t *testing.T) {
-	// Unset any potential test keys
-	if err := os.Unsetenv("TEST_NO_KEY"); err != nil {
-		t.Logf("Warning: failed to unset environment variable: %v", err)
-	}
-
-	encryptionConfig := config.EncryptionConfig{
-		Enabled: true,
-		KeyEnv:  "TEST_NO_KEY", // This env var doesn't exist
-	}
-
+	// NewDB requires a non-empty valid key; empty key should error
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test_no_key.db")
-
-	db, err := NewDB(dbPath, encryptionConfig)
-	if err == nil {
-		t.Error("Expected error when encryption enabled but no key provided")
-		if db != nil {
-			_ = db.Close()
-		}
-		return
+	db, err := NewDB(dbPath, "")
+	if db != nil {
+		_ = db.Close()
 	}
-
-	expectedError := "failed to load encryption key"
-	if !contains(err.Error(), expectedError) {
-		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
+	if err == nil {
+		t.Fatal("expected error when no encryption key is provided")
 	}
 }
 
@@ -227,19 +193,13 @@ func TestEncryptedDatabasePersistence(t *testing.T) {
 		t.Skip("SQLCipher not available in this environment; skipping encryption persistence test")
 	}
 	testKey := generateTestEncryptionKey()
-	t.Setenv("PERSISTENCE_TEST_KEY", testKey)
-
-	encryptionConfig := config.EncryptionConfig{
-		Enabled: true,
-		KeyEnv:  "PERSISTENCE_TEST_KEY",
-	}
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test_persistence.db")
 
 	// First connection: Create and populate database
 	{
-		db, err := NewDB(dbPath, encryptionConfig)
+		db, err := NewDB(dbPath, testKey)
 		if err != nil {
 			t.Fatalf("Failed to create encrypted database: %v", err)
 		}
@@ -264,7 +224,7 @@ func TestEncryptedDatabasePersistence(t *testing.T) {
 
 	// Second connection: Verify data persists
 	{
-		db, err := NewDB(dbPath, encryptionConfig)
+		db, err := NewDB(dbPath, testKey)
 		if err != nil {
 			t.Fatalf("Failed to reopen encrypted database: %v", err)
 		}
@@ -307,19 +267,13 @@ func TestEncryptedDatabaseWithWrongKey(t *testing.T) {
 	}
 	// Create database with one key
 	correctKey := generateTestEncryptionKey()
-	t.Setenv("CORRECT_KEY", correctKey)
-
-	encryptionConfig := config.EncryptionConfig{
-		Enabled: true,
-		KeyEnv:  "CORRECT_KEY",
-	}
 
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test_wrong_key.db")
 
 	// Create and populate database with correct key
 	{
-		db, err := NewDB(dbPath, encryptionConfig)
+		db, err := NewDB(dbPath, correctKey)
 		if err != nil {
 			t.Fatalf("Failed to create database: %v", err)
 		}
@@ -344,18 +298,12 @@ func TestEncryptedDatabaseWithWrongKey(t *testing.T) {
 
 	// Try to open with wrong key
 	wrongKey, _ := config.GenerateKey() // Generate a different key
-	t.Setenv("WRONG_KEY", wrongKey)
 
 	// Debug: Log the keys to verify they're different
 	t.Logf("Correct key: %s", correctKey)
 	t.Logf("Wrong key: %s", wrongKey)
 
-	wrongEncryptionConfig := config.EncryptionConfig{
-		Enabled: true,
-		KeyEnv:  "WRONG_KEY",
-	}
-
-	db, err := NewDB(dbPath, wrongEncryptionConfig)
+	db, err := NewDB(dbPath, wrongKey)
 	if err == nil {
 		// If, for some reason, opening succeeds, ensure we don't leave resources open
 		_ = db.Close()
