@@ -8,7 +8,7 @@ require (
 	github.com/coder/websocket v1.8.13
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/sashabaranov/go-openai v1.41.1
-	golang.org/x/crypto v0.41.0
+	golang.org/x/crypto v0.42.0
 )
 
 replace github.com/mattn/go-sqlite3 => github.com/mattn/go-sqlite3 v1.14.32
