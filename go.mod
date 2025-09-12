@@ -7,7 +7,7 @@ require (
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/coder/websocket v1.8.13
 	github.com/mattn/go-sqlite3 v1.14.32
-	github.com/sashabaranov/go-openai v1.41.1
+	github.com/sashabaranov/go-openai v1.41.2
 	golang.org/x/crypto v0.41.0
 )
 
