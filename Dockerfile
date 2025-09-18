@@ -1,5 +1,5 @@
 # Stage 1: Build Next.js frontend
-FROM node:24-alpine AS frontend-builder
+FROM node:24-bookworm AS frontend-builder
 
 WORKDIR /app/web
 
@@ -18,10 +18,36 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: Build Go backend
-FROM golang:1.25-alpine AS backend-builder
+FROM ubuntu:24.04 AS backend-builder
 
-# Install SQLCipher and build dependencies, including static library
-RUN apk add --no-cache gcc musl-dev sqlite-dev sqlite-static sqlcipher-dev pkgconf openssl-dev openssl-libs-static
+ARG GO_VERSION=1.25.1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/usr/local/go/bin:$PATH
+
+# Install toolchain, SQLCipher dev headers, and download Go
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential pkg-config curl ca-certificates libsqlcipher-dev libssl-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    arch=$(dpkg --print-architecture) && \
+    case "$arch" in \
+      amd64) GOARCH=amd64 ;; \
+      arm64) GOARCH=arm64 ;; \
+      *) echo "Unsupported arch: $arch" && exit 1 ;; \
+    esac && \
+    curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz -o /tmp/go.tgz && \
+    tar -C /usr/local -xzf /tmp/go.tgz && \
+    rm /tmp/go.tgz && \
+    # Ensure go is available
+    go version && \
+    # Align lib name expected by go-sqlite3 when using libsqlite3 tag
+    bash -lc 'libdir=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo aarch64-linux-gnu); \
+      if [ -e /usr/lib/$libdir/libsqlcipher.so ] && [ ! -e /usr/lib/$libdir/libsqlite3.so ]; then \
+        ln -s /usr/lib/$libdir/libsqlcipher.so /usr/lib/$libdir/libsqlite3.so; \
+      fi'
+
+# Enable CGO globally; actual flags are set at build invocation time below
+ENV CGO_ENABLED=1
 
 WORKDIR /app
 
@@ -46,9 +72,8 @@ ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
 ARG GOARCH
 
-RUN CGO_ENABLED=1 \
-    CGO_CFLAGS="$(pkg-config --cflags sqlcipher) -DSQLITE_HAS_CODEC" \
-    CGO_LDFLAGS="$(pkg-config --libs sqlcipher) $(pkg-config --libs libcrypto libssl)" \
+RUN CGO_CFLAGS="-I/usr/include/sqlcipher -DSQLITE_HAS_CODEC" \
+    CGO_LDFLAGS="-lsqlcipher -lssl -lcrypto" \
     go build \
     -tags="sqlite_crypt libsqlite3" \
     -ldflags="-w -s \
@@ -58,14 +83,18 @@ RUN CGO_ENABLED=1 \
     -o summarizarr \
     ./cmd/summarizarr
 
-# Stage 3: Runtime
-FROM alpine:latest
+# Stage 3: Runtime (Debian/Ubuntu, glibc)
+FROM ubuntu:24.04
 
-# Update package index and add ca certificates, utilities, and SQLCipher runtime libraries
-RUN apk update && \
-    apk --no-cache add ca-certificates wget sqlcipher-libs openssl && \
-    addgroup -g 1001 summarizarr && \
-    adduser -D -s /bin/sh -u 1001 -G summarizarr summarizarr
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates wget sqlcipher && \
+    rm -rf /var/lib/apt/lists/* && \
+    bash -lc 'libdir=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo aarch64-linux-gnu); \
+      if [ -e /usr/lib/$libdir/libsqlcipher.so ] && [ ! -e /usr/lib/$libdir/libsqlite3.so ]; then \
+        ln -s /usr/lib/$libdir/libsqlcipher.so /usr/lib/$libdir/libsqlite3.so; \
+      fi' && \
+    groupadd -g 1001 summarizarr && \
+    useradd -u 1001 -g 1001 -M -s /bin/sh summarizarr
 
 WORKDIR /app
 

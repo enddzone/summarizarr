@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
 	"summarizarr/internal/config"
 	"summarizarr/internal/signal"
@@ -308,6 +309,50 @@ func TestEncryptedDatabaseWithWrongKey(t *testing.T) {
 		// If, for some reason, opening succeeds, ensure we don't leave resources open
 		_ = db.Close()
 		t.Fatal("Expected error when opening encrypted database with wrong key")
+	}
+}
+
+// TestEncryptedDatabaseHeader ensures new databases are created with encrypted headers.
+func TestEncryptedDatabaseHeader(t *testing.T) {
+	if !hasSQLCipher(t) {
+		t.Skip("SQLCipher not available in this environment; skipping header encryption test")
+	}
+
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "header.db")
+	key := generateTestEncryptionKey()
+
+	db, err := NewDB(dbPath, key)
+	if err != nil {
+		t.Fatalf("failed to create encrypted database: %v", err)
+	}
+
+	if err := db.initTestSchema(); err != nil {
+		_ = db.Close()
+		t.Fatalf("failed to initialize schema: %v", err)
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("failed to close database: %v", err)
+	}
+
+	f, err := os.Open(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open database file: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	buf := make([]byte, 16)
+	n, err := f.Read(buf)
+	if err != nil {
+		t.Fatalf("failed to read database header: %v", err)
+	}
+	if n < 16 {
+		t.Fatalf("expected to read 16 bytes from header, got %d", n)
+	}
+
+	if string(buf) == "SQLite format 3\x00" {
+		t.Fatal("database header is plaintext; expected SQLCipher-encrypted header")
 	}
 }
 

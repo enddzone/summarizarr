@@ -34,4 +34,5 @@
 - Never commit secrets. Copy `.env.example` to `.env` for local dev.
 - SQLCipher is mandatory; run `make dev-setup` and follow README notes. In prod, provide 32-byte key via Docker secret.
 - Required env: `SIGNAL_PHONE_NUMBER`, AI provider vars. Backend listens on `LISTEN_ADDR` (default `:8081`).
-
+- SQLCipher connection pragmas are applied via DSN inside `internal/database`; avoid adding post-open `PRAGMA` calls (especially `cipher_migrate`).
+- Schema migrations execute statements individually—when adding SQL to `schema.sql`, ensure each statement is terminated with a semicolon and that comments stand on their own lines.

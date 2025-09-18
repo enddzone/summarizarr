@@ -219,6 +219,8 @@ Keys are 32-byte (64 hex characters) for AES-256. Never commit keys to version c
 
 Note: Databases must be encrypted from the first run. There is no supported migration from unencrypted databases.
 
+Tip: Ensure `./data` exists and is writable before starting with `make docker` or Compose. Both the database file and `encryption.key` persist in this directory.
+
 ## Production Deployment
 
 ### Container Registry
