@@ -9,6 +9,14 @@ updates:
     commit-message:
       prefix: "chore(gomod)"
       include: "scope"
+    groups:
+      backend-all:
+        patterns:
+          - "*"
+        update-types:
+          - major
+          - minor
+          - patch
 
   # npm (frontend - Next.js app)
   - package-ecosystem: "npm"
@@ -20,21 +28,17 @@ updates:
       prefix: "chore(npm)"
       include: "scope"
     groups:
-      nextjs-minor-patch:
+      frontend-minor-patch:
         patterns:
-          - "next"
-          - "react"
-          - "react-dom"
+          - "*"
         update-types:
           - minor
           - patch
-      eslint-minor-patch:
+      frontend-major:
         patterns:
-          - "eslint*"
-          - "@typescript-eslint/*"
+          - "*"
         update-types:
-          - minor
-          - patch
+          - major
 
   # GitHub Actions (CI)
   - package-ecosystem: "github-actions"

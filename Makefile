@@ -305,7 +305,18 @@ test: ## Run tests (supports FILE= for specific files)
 		else \
 			go test -v -race ./...; \
 		fi; \
-			cd web && ( [ -d node_modules ] || npm install ) && npm test; \
+		cd web && ( [ -d node_modules ] || npm install ) && npm test; \
 	fi
 
-.PHONY: help signal backend frontend all docker prod status stop clean logs logs-signal dev-setup install-sqlcipher dev-key dev-setup-encrypted prod-key test-backend test-frontend build-encrypted build-frontend build lint test
+release-tag: ## Create annotated release tag on main (VERSION=0.1.5)
+	@if [ -z "$(VERSION)" ]; then \
+		echo "$(RED)Missing VERSION. Usage: make release-tag VERSION=0.1.5$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)Creating release tag v$(VERSION) on main...$(NC)"
+	git switch main
+	git pull --ff-only origin main
+	git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
+	git push origin "v$(VERSION)"
+
+.PHONY: help signal backend frontend all docker prod status stop clean logs logs-signal dev-setup install-sqlcipher dev-key dev-setup-encrypted prod-key test-backend test-frontend build-encrypted build-frontend build lint test release-tag

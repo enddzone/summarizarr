@@ -1,7 +1,10 @@
 # Stage 1: Build Next.js frontend
-FROM node:24-bookworm AS frontend-builder
+FROM node:24-alpine AS frontend-builder
 
 WORKDIR /app/web
+
+# Install minimal runtime libs for native modules on musl
+RUN apk add --no-cache libc6-compat
 
 # Copy package files
 COPY web/package*.json ./
