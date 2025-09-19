@@ -28,11 +28,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH=/usr/local/go/bin:$PATH
 
 # Install toolchain, SQLCipher dev headers, and download Go
-RUN apt-get update && \
+RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; \
+    for attempt in 1 2 3; do \
+      if apt-get update; then \
+        break; \
+      fi; \
+      if [ "$attempt" = "3" ]; then \
+        echo "apt-get update failed after $attempt attempts" >&2; \
+        exit 1; \
+      fi; \
+      sleep 5; \
+    done; \
     apt-get install -y --no-install-recommends \
-      build-essential pkg-config curl ca-certificates libsqlcipher-dev libssl-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    arch=$(dpkg --print-architecture) && \
+      build-essential pkg-config curl ca-certificates libsqlcipher-dev libssl-dev; \
+    rm -rf /var/lib/apt/lists/*; \
+    arch=$(dpkg --print-architecture); \
     case "$arch" in \
       amd64) GOARCH=amd64 ;; \
       arm64) GOARCH=arm64 ;; \
@@ -89,14 +100,25 @@ RUN CGO_CFLAGS="-I/usr/include/sqlcipher -DSQLITE_HAS_CODEC" \
 # Stage 3: Runtime (Debian/Ubuntu, glibc)
 FROM ubuntu:24.04
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates wget sqlcipher && \
-    rm -rf /var/lib/apt/lists/* && \
+RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; \
+    for attempt in 1 2 3; do \
+      if apt-get update; then \
+        break; \
+      fi; \
+      if [ "$attempt" = "3" ]; then \
+        echo "apt-get update failed after $attempt attempts" >&2; \
+        exit 1; \
+      fi; \
+      sleep 5; \
+    done; \
+    apt-get install -y --no-install-recommends ca-certificates wget sqlcipher; \
+    rm -rf /var/lib/apt/lists/*; \
     bash -lc 'libdir=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo aarch64-linux-gnu); \
       if [ -e /usr/lib/$libdir/libsqlcipher.so ] && [ ! -e /usr/lib/$libdir/libsqlite3.so ]; then \
         ln -s /usr/lib/$libdir/libsqlcipher.so /usr/lib/$libdir/libsqlite3.so; \
-      fi' && \
-    groupadd -g 1001 summarizarr && \
+      fi'; \
+    groupadd -g 1001 summarizarr; \
     useradd -u 1001 -g 1001 -M -s /bin/sh summarizarr
 
 WORKDIR /app
