@@ -184,9 +184,9 @@ dev-setup-encrypted: dev-key ## Setup development environment with encryption en
 
 prod-key: ## Generate production encryption key
 	@mkdir -p docker/secrets
-	@openssl rand -hex 32 > docker/secrets/sqlcipher_encryption_key
-	@chmod 600 docker/secrets/sqlcipher_encryption_key
-	@echo "$(GREEN)Generated production encryption key in docker/secrets/sqlcipher_encryption_key$(NC)"
+	@openssl rand -hex 32 > docker/secrets/encryption_key
+	@chmod 600 docker/secrets/encryption_key
+	@echo "$(GREEN)Generated production encryption key in docker/secrets/encryption_key$(NC)"
 	@echo "$(RED)IMPORTANT: Back up this key securely!$(NC)"
 
 test-backend: ## Test Go backend with SQLCipher

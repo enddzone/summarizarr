@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,71 +28,44 @@ func NewDB(dataSourceName string, encryptionKey string) (*DB, error) {
 		return nil, err
 	}
 
-    var db *sql.DB
-    var err error
-    // Special-case in-memory for simplicity
-    if dataSourceName == ":memory:" {
-        db, err = sql.Open("sqlite3", dataSourceName)
-        if err != nil {
-            return nil, fmt.Errorf("failed to open encrypted database: %w", err)
-        }
-        slog.Info("Opening encrypted database with SQLCipher", "path", dataSourceName)
-        if _, err := db.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, encryptionKey)); err != nil {
-            _ = db.Close()
-            return nil, fmt.Errorf("failed to set encryption key: %w", err)
-        }
-    } else {
-        // Determine if the database file already exists
-        path := dataSourceName
-        if strings.HasPrefix(path, "file:") {
-            p := strings.TrimPrefix(path, "file:")
-            if i := strings.IndexRune(p, '?'); i >= 0 { path = p[:i] } else { path = p }
-        }
-        _, statErr := os.Stat(path)
+	var (
+		db      *sql.DB
+		err     error
+		dsn     string
+		logPath string
+	)
 
-        if statErr == nil {
-            // Existing file: pass key and critical PRAGMAs in DSN so the key is applied
-            // before any page reads on an existing encrypted file.
-            dsn := dataSourceName
-            if !strings.HasPrefix(dsn, "file:") { dsn = "file:" + dsn }
-            sep := "?"; if strings.Contains(dsn, "?") { sep = "&" }
-            dsn = fmt.Sprintf("%s%s_pragma_cipher_compatibility=4&_pragma_cipher_page_size=4096&_pragma_kdf_iter=256000&_pragma_cipher_hmac_algorithm=HMAC_SHA512&_pragma_cipher_kdf_algorithm=PBKDF2_HMAC_SHA512&_pragma_key=\"x'%s'\"", dsn, sep, encryptionKey)
-            db, err = sql.Open("sqlite3", dsn)
-            if err != nil {
-                return nil, fmt.Errorf("failed to open encrypted database: %w", err)
-            }
-            slog.Info("Opening encrypted database with SQLCipher", "path", dataSourceName)
-        } else if os.IsNotExist(statErr) {
-            // New file: open normally and set key immediately before any schema/query to ensure
-            // the database is created encrypted.
-            db, err = sql.Open("sqlite3", dataSourceName)
-            if err != nil {
-                return nil, fmt.Errorf("failed to open encrypted database: %w", err)
-            }
-            slog.Info("Opening encrypted database with SQLCipher", "path", dataSourceName)
-            if _, err := db.Exec(fmt.Sprintf(`PRAGMA key = "x'%s'"`, encryptionKey)); err != nil {
-                _ = db.Close()
-                return nil, fmt.Errorf("failed to set encryption key: %w", err)
-            }
-        } else {
-            return nil, fmt.Errorf("failed to stat database path: %w", statErr)
-        }
-    }
-
-    // Apply recommended SQLCipher settings for security and compatibility.
-    // These must be set after the key and before any other operations on a new database.
-	pragmas := []string{
-		"PRAGMA cipher_compatibility = 4",
-		"PRAGMA cipher_page_size = 4096",
-		"PRAGMA kdf_iter = 256000",
-		"PRAGMA cipher_hmac_algorithm = HMAC_SHA512",
-		"PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512",
-	}
-	for _, pragma := range pragmas {
-		if _, err := db.Exec(pragma); err != nil {
-			// It's okay for some of these to fail on older SQLCipher versions, so just log a warning.
-			slog.Warn("Failed to set SQLCipher pragma, continuing...", "pragma", pragma, "error", err)
+	if dataSourceName == ":memory:" {
+		dsn = buildSQLCipherMemoryDSN(encryptionKey)
+		logPath = ":memory:"
+	} else {
+		fsPath := dataSourceName
+		if strings.HasPrefix(fsPath, "file:") {
+			trimmed := strings.TrimPrefix(fsPath, "file:")
+			if i := strings.IndexRune(trimmed, '?'); i >= 0 {
+				fsPath = trimmed[:i]
+			} else {
+				fsPath = trimmed
+			}
 		}
+		if !filepath.IsAbs(fsPath) {
+			if abs, absErr := filepath.Abs(fsPath); absErr == nil {
+				fsPath = abs
+			}
+		}
+
+		// Proactively remove stale WAL/SHM before opening; they'll be regenerated if needed.
+		_ = os.Remove(fsPath + "-wal")
+		_ = os.Remove(fsPath + "-shm")
+
+		dsn = buildSQLCipherFileDSN(fsPath, encryptionKey)
+		logPath = fsPath
+	}
+
+	slog.Info("Opening encrypted database with SQLCipher", "path", logPath)
+	db, err = sql.Open("sqlite3", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open encrypted database: %w", err)
 	}
 
 	// Ensure SQLCipher is available and working on the keyed connection.
@@ -100,10 +74,8 @@ func NewDB(dataSourceName string, encryptionKey string) (*DB, error) {
 		return nil, fmt.Errorf("SQLCipher verification failed: %w", err)
 	}
 
-	// Validate that the key is correct by executing a simple query.
-	// On a new DB, this forces the file to be created on disk with encryption.
-	var cnt int
-	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master").Scan(&cnt); err != nil {
+	// Sanity check that the key can read the schema after initial pragmas.
+	if err := verifyKeyUsable(db); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to open encrypted database with provided key: %w", err)
 	}
@@ -134,6 +106,58 @@ func NewDB(dataSourceName string, encryptionKey string) (*DB, error) {
 	db.SetConnMaxLifetime(0) // No max lifetime (persistent connection)
 
 	return &DB{DB: db, DataSourceName: dataSourceName}, nil
+}
+
+// verifyKeyUsable runs a minimal query that should succeed after keying and ensures
+// the provided encryption key can decrypt the sqlite_master schema.
+func verifyKeyUsable(db *sql.DB) error {
+	var cnt int
+	if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master").Scan(&cnt); err != nil {
+		return err
+	}
+	return nil
+}
+
+// buildSQLCipherFileDSN constructs a DSN that applies the SQLCipher key and
+// essential settings before any other pragmas are executed by the driver.
+func buildSQLCipherFileDSN(path string, hexKey string) string {
+	values := url.Values{}
+	values.Set("_cipher", "sqlcipher")
+	values.Set("_cipher_compatibility", "4")
+	values.Set("_legacy", "4")
+	values.Set("_legacy_page_size", "4096")
+	values.Set("_plaintext_header_size", "0")
+	values.Set("_kdf_iter", "256000")
+	values.Set("_busy_timeout", "5000")
+	values.Set("_cipher_page_size", "4096")
+	values.Set("_cipher_hmac_algorithm", "HMAC_SHA512")
+	values.Set("_cipher_kdf_algorithm", "PBKDF2_HMAC_SHA512")
+	values.Set("_hmac_use", "on")
+	values.Set("_hmac_check", "on")
+	values.Set("_key", fmt.Sprintf("x'%s'", strings.ToUpper(hexKey)))
+
+	return fmt.Sprintf("file:%s?%s", path, values.Encode())
+}
+
+// buildSQLCipherMemoryDSN returns a DSN for in-memory databases with SQLCipher enabled.
+func buildSQLCipherMemoryDSN(hexKey string) string {
+	values := url.Values{}
+	values.Set("cache", "shared")
+	values.Set("_cipher", "sqlcipher")
+	values.Set("_cipher_compatibility", "4")
+	values.Set("_legacy", "4")
+	values.Set("_legacy_page_size", "4096")
+	values.Set("_plaintext_header_size", "0")
+	values.Set("_kdf_iter", "256000")
+	values.Set("_busy_timeout", "5000")
+	values.Set("_cipher_page_size", "4096")
+	values.Set("_cipher_hmac_algorithm", "HMAC_SHA512")
+	values.Set("_cipher_kdf_algorithm", "PBKDF2_HMAC_SHA512")
+	values.Set("_hmac_use", "on")
+	values.Set("_hmac_check", "on")
+	values.Set("_key", fmt.Sprintf("x'%s'", strings.ToUpper(hexKey)))
+
+	return "file::memory:?" + values.Encode()
 }
 
 // validateEncryptionKey validates that the encryption key is in the correct format
@@ -177,9 +201,9 @@ func verifySQLCipher(db *sql.DB) error {
 
 // VerifyWithKey attempts to open a fresh connection using the provided key.
 func (db *DB) VerifyWithKey(key string) error {
-    if err := validateEncryptionKey(key); err != nil {
-        return err
-    }
+	if err := validateEncryptionKey(key); err != nil {
+		return err
+	}
 	// For in-memory databases, we cannot re-open; perform a simple query on current conn
 	if db.DataSourceName == ":memory:" {
 		var cnt int
@@ -188,20 +212,20 @@ func (db *DB) VerifyWithKey(key string) error {
 		}
 		return nil
 	}
-    // Verify using ATTACH with a key on the existing SQLCipher-enabled connection.
-    // This avoids differences in linker/driver flags across build tags.
-    escPath := strings.ReplaceAll(db.DataSourceName, "'", "''")
-    attachStmt := fmt.Sprintf("ATTACH DATABASE '%s' AS verify KEY \"x'%s'\"", escPath, key)
-    if _, err := db.Exec(attachStmt); err != nil {
-        return fmt.Errorf("failed to attach database for verification: %w", err)
-    }
-    defer func() { _, _ = db.Exec("DETACH DATABASE verify") }()
+	// Verify using ATTACH with a key on the existing SQLCipher-enabled connection.
+	// This avoids differences in linker/driver flags across build tags.
+	escPath := strings.ReplaceAll(db.DataSourceName, "'", "''")
+	attachStmt := fmt.Sprintf("ATTACH DATABASE '%s' AS verify KEY \"x'%s'\"", escPath, key)
+	if _, err := db.Exec(attachStmt); err != nil {
+		return fmt.Errorf("failed to attach database for verification: %w", err)
+	}
+	defer func() { _, _ = db.Exec("DETACH DATABASE verify") }()
 
-    var cnt int
-    if err := db.QueryRow("SELECT COUNT(*) FROM verify.sqlite_master").Scan(&cnt); err != nil {
-        return fmt.Errorf("failed to verify database with provided key: %w", err)
-    }
-    return nil
+	var cnt int
+	if err := db.QueryRow("SELECT COUNT(*) FROM verify.sqlite_master").Scan(&cnt); err != nil {
+		return fmt.Errorf("failed to verify database with provided key: %w", err)
+	}
+	return nil
 }
 
 // NOTE: Rotation metadata tables and related helpers have been removed.
@@ -211,14 +235,16 @@ func (db *DB) Init() error {
 	// First, check if we need to create/update the schema
 	slog.Info("Initializing database schema")
 
-	schema, err := os.ReadFile("schema.sql")
+	schemaBytes, err := os.ReadFile("schema.sql")
 	if err != nil {
 		return fmt.Errorf("failed to read schema file: %w", err)
 	}
 
-	// Execute the schema - CREATE TABLE IF NOT EXISTS will handle new tables
-	// and existing tables will be left unchanged
-	if _, err := db.Exec(string(schema)); err != nil {
+	// Execute each statement individually; go-sqlite3 can surface misleading
+	// errors (SQLITE_NOMEM) when fed multi-statement scripts directly.
+	// Breaking the schema into discrete statements avoids that issue and
+	// provides clearer failure context on individual statements.
+	if err := execSQLStatements(db.DB, string(schemaBytes)); err != nil {
 		return fmt.Errorf("failed to execute schema: %w", err)
 	}
 
@@ -272,11 +298,11 @@ func ensureOnDiskEncrypted(dsn string) error {
 	if fi.IsDir() {
 		return fmt.Errorf("database path points to a directory, not a file: %s", path)
 	}
-    f, err := os.Open(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("failed to open database file for verification: %w", err)
 	}
-    defer func() { _ = f.Close() }()
+	defer func() { _ = f.Close() }()
 	buf := make([]byte, 16)
 	n, err := f.Read(buf)
 	if err != nil {
@@ -316,11 +342,6 @@ func (db *DB) migrateMessagesTable() error {
 	if err != nil {
 		return fmt.Errorf("failed to get table info: %w", err)
 	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			slog.Error("Failed to close rows", "error", err, "context", "migrateMessagesTable table_info(messages)")
-		}
-	}()
 
 	existingColumns := make(map[string]bool)
 	for rows.Next() {
@@ -334,6 +355,14 @@ func (db *DB) migrateMessagesTable() error {
 			return fmt.Errorf("failed to scan table info: %w", err)
 		}
 		existingColumns[name] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("failed to iterate table info: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("failed to close table info rows: %w", err)
 	}
 
 	// List of columns that should exist in the messages table
@@ -387,6 +416,45 @@ func (db *DB) migrateAuthTables() error {
 	return nil
 }
 
+// execSQLStatements executes a semicolon-delimited script one statement at a time.
+// This avoids driver quirks with multi-statement Exec calls and surfaces the
+// exact statement that fails.
+func execSQLStatements(db *sql.DB, script string) error {
+	statements := strings.Split(script, ";")
+	for _, stmt := range statements {
+		tmp := stmt
+		for {
+			trimmed := strings.TrimSpace(tmp)
+			if trimmed == "" {
+				tmp = ""
+				break
+			}
+			if strings.HasPrefix(trimmed, "--") {
+				newlineIdx := strings.Index(tmp, "\n")
+				if newlineIdx < 0 {
+					tmp = ""
+				} else {
+					tmp = tmp[newlineIdx+1:]
+				}
+				continue
+			}
+			break
+		}
+		trimmed := strings.TrimSpace(tmp)
+		if trimmed == "" {
+			continue
+		}
+		trimmed = strings.TrimSuffix(trimmed, ";")
+		if trimmed = strings.TrimSpace(trimmed); trimmed == "" {
+			continue
+		}
+		if _, err := db.Exec(trimmed); err != nil {
+			return fmt.Errorf("statement failed (%s): %w", trimmed, err)
+		}
+	}
+	return nil
+}
+
 // addColumnIfNotExists adds a column to a table if it doesn't already exist
 func (db *DB) addColumnIfNotExists(tableName, columnName, columnDef string) error {
 	// Check what columns exist in the table
@@ -394,11 +462,6 @@ func (db *DB) addColumnIfNotExists(tableName, columnName, columnDef string) erro
 	if err != nil {
 		return fmt.Errorf("failed to get table info for %s: %w", tableName, err)
 	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			slog.Error("Failed to close rows", "error", err, "context", fmt.Sprintf("addColumnIfNotExists table_info(%s)", tableName))
-		}
-	}()
 
 	existingColumns := make(map[string]bool)
 	for rows.Next() {
@@ -412,6 +475,14 @@ func (db *DB) addColumnIfNotExists(tableName, columnName, columnDef string) erro
 			return fmt.Errorf("failed to scan table info for %s: %w", tableName, err)
 		}
 		existingColumns[name] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("failed to iterate table info for %s: %w", tableName, err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("failed to close table info rows for %s: %w", tableName, err)
 	}
 
 	// Add column if it doesn't exist

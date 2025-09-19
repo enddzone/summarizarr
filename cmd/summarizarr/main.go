@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"crypto/sha256"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -58,6 +59,14 @@ func main() {
 	if err != nil {
 		slog.Error("Failed to obtain encryption key", "error", err)
 		os.Exit(1)
+	}
+	// Log masked key fingerprint and source for troubleshooting in dev
+	{
+		finger := sha256.Sum256([]byte(encKey))
+		src := "generated"
+		if _, err := os.Stat(encMgr.SecretPath); err == nil { src = encMgr.SecretPath }
+		if _, err := os.Stat(encMgr.KeyFile); err == nil { src = encMgr.KeyFile }
+		slog.Info("Using encryption key", "source", src, "sha256_prefix", fmt.Sprintf("%x", finger)[:8])
 	}
 
 	db, err := database.NewDB(cfg.DatabasePath, encKey)
